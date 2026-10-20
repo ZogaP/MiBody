@@ -11,7 +11,8 @@
     "test": "node --test tests/core.test.js",
     "test:e2e": "node tests/browser.mjs",
     "test:portable": "node tests/portable.mjs",
-    "test:machines": "node tests/machines.mjs"
+    "test:machines": "node tests/machines.mjs",
+    "test:budget": "node tests/budget.mjs"
   },
   "devDependencies": {
     "playwright-core": "1.58.2",

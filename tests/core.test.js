@@ -21,6 +21,12 @@ import {
   machineExercise,
   isMachine,
 } from "../src/machines.js";
+import {
+  budgetRows,
+  budgetGoals,
+  addBudgetPlan,
+  BUDGET_MEALS,
+} from "../src/budget.js";
 test("números brasileiros e nutrição proporcional sem conversão de unidade", () => {
   assert.equal(num("12,5"), 12.5);
   const result = total([
@@ -179,4 +185,34 @@ test("troca de aparelho preserva séries reais, volume e carga em branco na alte
   const fresh = startSession({ id: "t", name: "Push", exercises: [e] }, day());
   substituteExercise(fresh, 0, machineExercise("incline-press"));
   assert.equal(fresh.exercises.length, 1);
+});
+test("modelo alimentar usa nutrientes proporcionais e não registra consumo nem altera metas sem escolha", () => {
+  const rows = budgetRows(),
+    t = total(rows);
+  assert.ok(Math.abs(t.kcal - 2156.16) < 0.01);
+  assert.ok(Math.abs(t.protein - 133.54) < 0.01);
+  const s = initial();
+  s.profile.kcal = 1900;
+  const map = Object.fromEntries(BUDGET_MEALS.map((m) => [m.key, m.name]));
+  assert.equal(addBudgetPlan(s, map), 18);
+  assert.equal(s.foods.length, 10);
+  assert.equal(s.entries.length, 0);
+  assert.equal(s.profile.kcal, 1900);
+  assert.equal(addBudgetPlan(s, map), 0);
+  assert.equal(s.plans.length, 18);
+  const old = s.plans[0].kcal;
+  s.foods.find((f) => f.id === s.plans[0].foodId).kcal = 500;
+  assert.equal(s.plans[0].kcal, old);
+  assert.doesNotThrow(() => validateBackup(JSON.parse(JSON.stringify(s))));
+  addBudgetPlan(s, map, { useGoals: true });
+  assert.deepEqual(budgetGoals(), {
+    kcal: 2150,
+    protein: 135,
+    carbs: 270,
+    fat: 60,
+  });
+  assert.equal(s.profile.kcal, 2150);
+  const before = structuredClone(s);
+  assert.throws(() => addBudgetPlan(s, { breakfast: "Refeição inexistente" }));
+  assert.deepEqual(s, before);
 });

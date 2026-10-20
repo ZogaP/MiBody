@@ -62,6 +62,7 @@ export function initial() {
       autoRest: true,
       waterQuick: 250,
       equipmentPreference: "machines",
+      allergies: "",
     },
     onboarded: false,
     templates: [],
@@ -210,6 +211,11 @@ export function validateBackup(data) {
         ),
     );
   const p = data.profile;
+  if (
+    p.allergies !== undefined &&
+    (typeof p.allergies !== "string" || p.allergies.length > 2000)
+  )
+    throw Error("Anotações de alergias inválidas.");
   if (
     p.equipmentPreference !== undefined &&
     !["machines", "any"].includes(p.equipmentPreference)

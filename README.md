@@ -71,6 +71,12 @@ Em **Treinos → Ver divisão**, revise e adicione cinco fichas opcionais de exe
 
 Em **Perfil → Prioridade de equipamentos**, escolha “Máquinas e polias primeiro”. A biblioteca inclui aparelhos comuns, com notas para regulagem. Bibliotecas e históricos anteriores são preservados, e a importação das fichas não duplica exemplos já adicionados. No treino, **Substituir** oferece filtros de equipamento e movimento; séries já concluídas ficam no exercício original e a alternativa começa sem carga registrada.
 
+### Exemplo de alimentação econômica
+
+Em **Alimentação → Meu plano alimentar → Ver exemplo econômico**, revise quatro refeições com alimentos comuns. Os valores dos dez alimentos são uma seleção estática da **TACO, NEPA/UNICAMP, 4ª edição, 2011**, com referência em 100 g. O aplicativo não consulta serviços nutricionais durante o uso. O [guia e a procedência dos dados](docs/alimentacao-economica.md) explicam o exemplo e suas limitações.
+
+A importação adiciona itens ao planejamento, preservando consumos anteriores e as metas atuais. O usuário pode optar expressamente por usar metas arredondadas a partir dos totais do exemplo. Não há cálculo automático de necessidades pessoais. Repetir a importação não duplica os itens. As anotações de alergias e restrições no Perfil ficam localmente no IndexedDB e entram no backup; o app não certifica ingredientes como seguros para alergias.
+
 ## Dados e recuperação
 
 Cada alteração de registros é gravada automaticamente no IndexedDB. Em caso de falha, uma faixa de erro permanece visível. Exporte um backup antes de sair caso isso aconteça. Não há sincronização entre celulares, entre navegadores ou entre o navegador e uma instalação que use outro espaço de armazenamento.
@@ -88,6 +94,7 @@ npm run build
 npm run test:e2e
 npm run test:portable
 npm run test:machines
+npm run test:budget
 ```
 
 O teste de navegador usa Chromium instalado em `/usr/bin/chromium`; outro caminho pode ser passado em `CHROMIUM_PATH`. Os testes usam um perfil temporário e não alteram seus dados pessoais. Capturas são geradas em `test-results/`, que não é versionado.
@@ -108,6 +115,7 @@ A versão autocontida foi testada em HTTP sem requisitar dependências externas,
 
 - `src/core.js`: cálculos, criação de sessões, datas, CSV e validação de backup.
 - `src/machines.js`: catálogo de máquinas, divisão PPL + Upper + Lower e importação sem duplicidade.
+- `src/budget.js` e `src/budget-foods.json`: exemplo econômico e valores nutricionais com procedência, separados do diário consumido.
 - `src/db.js`: transações IndexedDB.
 - `src/app.js`: telas, formulários, navegação e interações.
 - `src/style.css`: temas, layout responsivo e acessibilidade visual.

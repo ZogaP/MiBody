@@ -17,6 +17,12 @@ import {
 } from "./core.js";
 import { openDB, saveDB } from "./db.js";
 import {
+  BUDGET_MEALS,
+  budgetRows,
+  budgetGoals,
+  addBudgetPlan,
+} from "./budget.js";
+import {
   MACHINE_CATALOG,
   PPL_MACHINES,
   machineExercise,
@@ -418,7 +424,7 @@ function foodView() {
         ? favoritesView()
         : `${
             foodTab === "plano"
-              ? '<div class="note">Planejamento separado do diário. Use “Consumir” para registrar apenas o que você realmente comeu, na data selecionada.</div>'
+              ? plannedOverview()
               : `<section class="card"><div class="row between"><div><small>CONSUMIDO EM ${dateLabel(selectedDate).toUpperCase()}</small><div class="metric">${fmt(t.kcal)} <span>kcal ${state.profile.kcal ? " / " + fmt(state.profile.kcal) : ""}</span></div><small>${esc(goalText(t.kcal, state.profile.kcal, "kcal"))}</small></div>${icon("food", 28)}</div><div class="macro-row">${[
                   ["protein", "Proteínas"],
                   ["carbs", "Carboidratos"],
@@ -434,6 +440,37 @@ function foodView() {
           }<div class="section-label"><h2>${foodTab === "plano" ? "Suas refeições planejadas" : "Suas refeições"}</h2><div class="row">${btn("Editar refeições", "edit-meals", "mini")}${foodTab === "plano" ? btn("+ Planejar", "add-plan", "primary mini") : ""}</div></div><div class="grid cols">${state.meals.map((meal) => mealCard(meal, foodTab === "plano")).join("")}</div>`
   }`;
 }
+function plannedOverview() {
+  const t = total(state.plans);
+  return `<section class="card plan-intro"><div><span class="badge">COMIDA DO DIA A DIA</span><h2>Um plano econômico</h2><p class="form-help">Exemplo editável com arroz, feijão, ovos, frango e alimentos comuns. Confira as quantidades e os ingredientes antes de adicionar.</p></div>${btn("Ver exemplo econômico", "budget-preview", "primary")}</section><div class="note">Planejar não registra consumo. Use “Registrar consumo” em cada alimento somente quando você comer.</div>${state.plans.length ? `<section class="card spaced"><small>TOTAL PLANEJADO · ESTIMATIVAS</small><div class="metric">${fmt(t.kcal)} <span>kcal</span></div><p class="form-help">Proteínas: ${fmt(t.protein, 1)} g · Carboidratos: ${fmt(t.carbs, 1)} g · Gorduras: ${fmt(t.fat, 1)} g</p></section>` : ""}`;
+}
+function budgetPreview() {
+  const rows = budgetRows(),
+    t = total(rows),
+    g = budgetGoals();
+  const missing = rows.filter(
+    (r) => !state.plans.some((p) => p.planSeed === r.planSeed),
+  );
+  modal(
+    "Exemplo de plano econômico",
+    `<div class="note">Referência geral para você revisar e adaptar às suas necessidades. Os totais vêm da TACO (4ª edição, 2011) e variam com marca, preparo e quantidade. Este exemplo não calcula suas necessidades pessoais.</div>${state.plans.length && missing.length ? `<p class="note spaced">Você já tem ${state.plans.length} itens planejados. A confirmação adiciona o exemplo ao plano atual; revise os itens para montar o dia que pretende seguir.</p>` : ""}<div class="row wrap spaced"><span class="pill">≈ ${fmt(t.kcal)} kcal</span><span class="pill">P ${fmt(t.protein)} g</span><span class="pill">C ${fmt(t.carbs)} g</span><span class="pill">G ${fmt(t.fat)} g</span></div>${BUDGET_MEALS.map(
+      (m) =>
+        `<section class="plan-preview"><h3>${esc(m.name)}</h3><ol>${rows
+          .filter((r) => r.modelMeal === m.key)
+          .map(
+            (r) =>
+              `<li><strong>${esc(r.name)} · ${fmt(r.quantity)} g</strong><small>${esc(r.portionNote)}</small></li>`,
+          )
+          .join(
+            "",
+          )}</ol>${missing.length ? select("Adicionar em", "budget-" + m.key, state.meals, state.meals.includes(m.name) ? m.name : state.meals[0]) : ""}</section>`,
+    ).join(
+      "",
+    )}<div class="note spaced">O óleo listado já representa o total da refeição, inclusive o usado no preparo. Os pesos de arroz, feijão e frango são depois de cozinhar. Porções em unidades são aproximações: os cálculos usam gramas.</div><p class="form-help spaced">Compre frutas e vegetais da época, compare preços locais de ovos, frango e proteína de soja e prepare porções para congelar. As substituições mudam os nutrientes: cadastre os valores do rótulo ao trocar alimentos.</p><p class="form-help spaced">Confira rótulos e contato cruzado para suas alergias. ${state.profile.allergies ? `Suas anotações locais: <strong>${esc(state.profile.allergies)}</strong>.` : ""}</p><p class="form-help spaced">Fonte: <a href="https://github.com/raulfdm/taco-api/tree/main/references" target="_blank" rel="noopener noreferrer">TACO/NEPA–UNICAMP, arquivos de referência e transcrição</a>. Sódio do sal adicionado e de outros temperos não está incluído.</p>${missing.length ? `<label class="check spaced"><input type="checkbox" name="useBudgetGoals">Usar metas de referência: ${fmt(g.kcal)} kcal, P ${g.protein} g, C ${g.carbs} g e G ${g.fat} g.</label><p class="form-help spaced">Marque somente se quiser substituir suas metas atuais por esses valores aproximados. Você pode editá-los depois no Perfil.</p>` : `<footer>${btn("Voltar ao meu plano", "budget-close", "primary")}</footer>`}`,
+    missing.length ? "budget-plan" : "",
+    "Adicionar ao planejamento",
+  );
+}
 function mealCard(meal, planned) {
   const rows = (
       planned
@@ -441,7 +478,7 @@ function mealCard(meal, planned) {
         : state.entries.filter((e) => e.date === selectedDate)
     ).filter((e) => e.meal === meal),
     t = total(rows);
-  return `<section class="card"><div class="card-head"><div><h2>${esc(meal)}</h2><small>${fmt(t.kcal)} kcal · P ${fmt(t.protein, 1)} g · C ${fmt(t.carbs, 1)} g · G ${fmt(t.fat, 1)} g</small></div>${btn(icon("plus", 18), planned ? "add-plan" : "add-entry", "icon", `data-meal="${esc(meal)}" aria-label="Adicionar em ${esc(meal)}"`)}</div>${rows.length ? rows.map((e) => `<div class="list-item"><div class="row between"><div><h3>${esc(e.name)}</h3><p>${fmt(e.quantity, 1)} ${esc(e.unit)} · ${fmt(total([e]).kcal)} kcal</p><small>${esc(e.source || "Cadastro manual")}${e.brand ? " · " + esc(e.brand) : ""}</small></div><div class="row">${btn(icon("edit", 16), planned ? "edit-plan" : "edit-entry", "icon", `data-id="${e.id}" aria-label="Editar ${esc(e.name)}"`)}${btn(icon("trash", 16), planned ? "delete-plan" : "delete-entry", "icon danger", `data-id="${e.id}" aria-label="Remover ${esc(e.name)}"`)}</div></div>${planned ? `<div class="spaced">${btn("Registrar consumo", "consume-plan", "mini", `data-id="${e.id}"`)}</div>` : ""}</div>`).join("") : `<p class="form-help">${planned ? "Nada planejado. Adicione alimentos e quantidades." : "Nenhum alimento registrado nesta refeição."}</p>`}${rows.length ? `<div class="row wrap spaced">${!planned ? btn("Copiar para outra data", "copy-meal", "mini", `data-meal="${esc(meal)}"`) : ""}${btn("Salvar como frequente", planned ? "favorite-plan" : "favorite-meal", "mini", `data-meal="${esc(meal)}"`)}</div>` : ""}</section>`;
+  return `<section class="card"><div class="card-head"><div><h2>${esc(meal)}</h2><small>${fmt(t.kcal)} kcal · P ${fmt(t.protein, 1)} g · C ${fmt(t.carbs, 1)} g · G ${fmt(t.fat, 1)} g</small></div>${btn(icon("plus", 18), planned ? "add-plan" : "add-entry", "icon", `data-meal="${esc(meal)}" aria-label="Adicionar em ${esc(meal)}"`)}</div>${rows.length ? rows.map((e) => `<div class="list-item"><div class="row between"><div><h3>${esc(e.name)}</h3><p>${fmt(e.quantity, 1)} ${esc(e.unit)} · ${fmt(total([e]).kcal)} kcal</p><small>${esc(e.source || "Cadastro manual")}${e.brand ? " · " + esc(e.brand) : ""}</small>${e.portionNote ? `<p class="form-help">${esc(e.portionNote)}</p>` : ""}</div><div class="row">${btn(icon("edit", 16), planned ? "edit-plan" : "edit-entry", "icon", `data-id="${e.id}" aria-label="Editar ${esc(e.name)}"`)}${btn(icon("trash", 16), planned ? "delete-plan" : "delete-entry", "icon danger", `data-id="${e.id}" aria-label="Remover ${esc(e.name)}"`)}</div></div>${planned ? `<div class="spaced">${btn("Registrar consumo", "consume-plan", "mini", `data-id="${e.id}"`)}</div>` : ""}</div>`).join("") : `<p class="form-help">${planned ? "Nada planejado. Adicione alimentos e quantidades." : "Nenhum alimento registrado nesta refeição."}</p>`}${rows.length ? `<div class="row wrap spaced">${!planned ? btn("Copiar para outra data", "copy-meal", "mini", `data-meal="${esc(meal)}"`) : ""}${btn("Salvar como frequente", planned ? "favorite-plan" : "favorite-meal", "mini", `data-meal="${esc(meal)}"`)}</div>` : ""}</section>`;
 }
 function foodLibrary() {
   return `<div class="row wrap spaced" style="margin-bottom:20px">${btn("+ Alimento do rótulo", "new-food", "primary")}${btn("+ Receita", "new-recipe", "ghost")}</div><div class="card">${state.foods.length ? state.foods.map((f) => `<div class="list-item row between"><div><h3>${esc(f.name)}</h3><p>${fmt(f.kcal)} kcal por ${fmt(f.reference, 1)} ${esc(f.unit)}</p><small>${esc(f.source)}${f.brand ? " · " + esc(f.brand) : ""}</small></div><div class="row">${btn(icon("edit", 16), "edit-food", "icon", `data-id="${f.id}" aria-label="Editar alimento"`)}${btn(icon("trash", 16), "delete-food", "icon danger", `data-id="${f.id}" aria-label="Excluir alimento"`)}</div></div>`).join("") : empty("Seu próprio catálogo", "Cadastre alimentos a partir do rótulo. Os valores são informados por você, sem buscas simuladas.", "new-food", "Cadastrar alimento", "food")}</div>`;
@@ -641,7 +678,7 @@ function profileView() {
       ["condicionamento", "Melhorar condicionamento"],
     ],
     p.goal,
-  )}${decimal("Altura (cm, opcional)", "height", p.height)}${decimal("Peso inicial (kg, opcional)", "initialWeight", p.initialWeight)}${weekdays(p.days)}</div><div class="section-label"><h2>Metas diárias</h2></div><p class="form-help">Informe suas próprias metas. O MiBody não calcula dietas nem prescreve exercícios pelo objetivo.</p><div class="form-grid spaced">${[
+  )}${decimal("Altura (cm, opcional)", "height", p.height)}${decimal("Peso inicial (kg, opcional)", "initialWeight", p.initialWeight)}${weekdays(p.days)}${input("Alergias e restrições (anotação local)", "allergies", p.allergies || "", "text", 'maxlength="2000" placeholder="Informe suas restrições, se houver"')}</div><div class="section-label"><h2>Metas diárias</h2></div><p class="form-help">Informe suas próprias metas. O MiBody não calcula dietas nem prescreve exercícios pelo objetivo.</p><div class="form-grid spaced">${[
     ["kcal", "Calorias (kcal)"],
     ["protein", "Proteínas (g)"],
     ["carbs", "Carboidratos (g)"],
@@ -821,6 +858,8 @@ function exportCSV() {
 }
 
 const actions = {
+  "budget-preview": budgetPreview,
+  "budget-close": close,
   "machine-pack": packPreview,
   "pack-close": () => {
     close();
@@ -1410,6 +1449,22 @@ function getExercise(d) {
   };
 }
 const forms = {
+  "budget-plan": async (d, f) => {
+    const map = Object.fromEntries(
+      BUDGET_MEALS.map((m) => [m.key, d["budget-" + m.key]]),
+    );
+    const added = addBudgetPlan(state, map, {
+      useGoals: f.elements.useBudgetGoals.checked,
+    });
+    await persist();
+    close();
+    page = "food";
+    foodTab = "plano";
+    render();
+    toast(
+      `${added} itens adicionados ao plano. Consumo diário permanece separado.`,
+    );
+  },
   "machine-pack": async (d) => {
     const assignments = Object.fromEntries(
       PPL_MACHINES.map((t) => [t.key, d["day-" + t.key] ?? ""]),
