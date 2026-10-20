@@ -2,6 +2,10 @@
 
 PWA pessoal em português do Brasil para treinos, alimentação e evolução corporal. Sem conta, backend, anúncios ou rastreadores. Os dados e fotos ficam no IndexedDB deste navegador.
 
+## Interface
+
+<img src="docs/tela-inicial.png" alt="Tela inicial do MiBody sem registros pessoais" width="320">
+
 ## Executar
 
 Requer Node.js 20.19+ ou 22.12+ (validado com Node 24) e npm.
