@@ -6,12 +6,21 @@ import {
   num,
   elapsed,
   startSession,
+  substituteExercise,
   volume,
   validateBackup,
   day,
   goalText,
   csv,
 } from "../src/core.js";
+import {
+  MACHINE_CATALOG,
+  addMachinePack,
+  addMachineLibrary,
+  exerciseChoices,
+  machineExercise,
+  isMachine,
+} from "../src/machines.js";
 test("números brasileiros e nutrição proporcional sem conversão de unidade", () => {
   assert.equal(num("12,5"), 12.5);
   const result = total([
@@ -76,4 +85,98 @@ test("datas usam calendário local e CSV escapa campos e fórmulas", () => {
     /'=SUM/,
   );
   assert.match(csv([{ name: 'a"b' }], ["name"]), /a""b/);
+});
+test("PPL com máquinas é opcional, não duplica e preserva dados anteriores", () => {
+  const s = initial();
+  s.profile.name = "Meu nome";
+  s.library.push({
+    id: "custom",
+    name: "Meu exercício",
+    group: "Outro",
+    equipment: "",
+    sets: 2,
+    reps: "10",
+    rest: 90,
+    kg: "",
+    notes: "",
+    video: "",
+  });
+  const before = structuredClone(s.library);
+  assert.equal(s.templates.length, 0);
+  assert.equal(addMachinePack(s), 5);
+  assert.equal(addMachinePack(s), 0);
+  assert.deepEqual(s.library, before);
+  assert.equal(s.profile.name, "Meu nome");
+  assert.equal(s.profile.equipmentPreference, "machines");
+  assert.deepEqual(
+    s.templates.map((t) => t.name.split(" — ")[0]),
+    ["Push", "Pull", "Legs", "Upper", "Lower"],
+  );
+  assert.ok(
+    s.templates.every(
+      (t) =>
+        t.days.length === 0 &&
+        t.example &&
+        t.exercises.every((e) => isMachine(e) && e.kg === ""),
+    ),
+  );
+  assert.equal(s.sessions.length, 0);
+  assert.deepEqual(validateBackup(JSON.parse(JSON.stringify(s))), s);
+  assert.throws(() => addMachinePack(initial(), { push: "1", pull: "1" }));
+  const scheduled = initial();
+  addMachinePack(scheduled, {
+    push: "1",
+    pull: "2",
+    legs: "3",
+    upper: "5",
+    lower: "6",
+  });
+  assert.deepEqual(
+    scheduled.templates.map((t) => t.days[0]),
+    [1, 2, 3, 5, 6],
+  );
+});
+test("biblioteca antiga é preservada e máquinas aparecem antes de pesos livres", () => {
+  const custom = {
+    id: "custom",
+    name: "Agachamento livre",
+    equipment: "Barra",
+    group: "Pernas",
+    sets: 3,
+    reps: "10",
+    rest: 90,
+    kg: 20,
+  };
+  const s = initial();
+  s.library = [custom];
+  assert.equal(addMachineLibrary(s), MACHINE_CATALOG.length);
+  assert.equal(addMachineLibrary(s), 0);
+  assert.deepEqual(s.library[0], custom);
+  const choices = exerciseChoices(s.library);
+  assert.ok(isMachine(choices[0]));
+  assert.equal(choices.at(-1).id, "custom");
+  const legacy = initial();
+  delete legacy.profile.equipmentPreference;
+  assert.doesNotThrow(() => validateBackup(legacy));
+});
+test("troca de aparelho preserva séries reais, volume e carga em branco na alternativa", () => {
+  const e = machineExercise("chest-press", { sets: 3, reps: "8–12" }),
+    s = startSession({ id: "t", name: "Push", exercises: [e] }, day());
+  s.exercises[0].sets[0] = { id: "done", done: true, kg: 25, reps: 10 };
+  const replacement = substituteExercise(
+    s,
+    0,
+    machineExercise("incline-press", { sets: 2 }),
+  );
+  assert.equal(s.exercises.length, 2);
+  assert.equal(s.exercises[0].name, e.name);
+  assert.deepEqual(s.exercises[0].sets, [
+    { id: "done", done: true, kg: 25, reps: 10 },
+  ]);
+  assert.equal(replacement.sets.length, 2);
+  assert.ok(replacement.sets.every((s) => s.kg === "" && !s.done));
+  assert.equal(volume(s), 250);
+  const fresh = startSession({ id: "t", name: "Push", exercises: [e] }, day());
+  substituteExercise(fresh, 0, machineExercise("incline-press"));
+  assert.equal(fresh.exercises.length, 1);
 });

@@ -1,3 +1,4 @@
+import { MACHINE_CATALOG, machineExercise } from "./machines.js";
 export const VERSION = 1;
 export const uid = () => crypto.randomUUID();
 export const day = (date = new Date()) =>
@@ -60,6 +61,7 @@ export function initial() {
       rest: 90,
       autoRest: true,
       waterQuick: 250,
+      equipmentPreference: "machines",
     },
     onboarded: false,
     templates: [],
@@ -79,26 +81,7 @@ export function initial() {
       "Jantar",
       "Ceia",
     ],
-    library: [
-      ["Supino reto", "Peito"],
-      ["Agachamento livre", "Pernas"],
-      ["Remada curvada", "Costas"],
-      ["Desenvolvimento", "Ombros"],
-      ["Rosca direta", "Bíceps"],
-      ["Tríceps na polia", "Tríceps"],
-      ["Prancha", "Abdômen"],
-    ].map(([name, group]) => ({
-      id: uid(),
-      name,
-      group,
-      equipment: "",
-      sets: 3,
-      reps: "8–12",
-      kg: "",
-      rest: 90,
-      notes: "",
-      video: "",
-    })),
+    library: MACHINE_CATALOG.map((e) => machineExercise(e.catalogKey)),
   };
 }
 export function startSession(template, date) {
@@ -125,6 +108,21 @@ export function startSession(template, date) {
       referenceReps: e.reps,
     })),
   };
+}
+export function substituteExercise(session, index, candidate) {
+  const current = session.exercises[index];
+  if (!current) throw Error("Exercício não encontrado.");
+  const completed = current.sets.filter((s) => s.done);
+  const replacement = startSession(
+    { id: "", name: "", exercises: [candidate] },
+    session.date,
+  ).exercises[0];
+  if (completed.length) {
+    // Keep every actual set under the exercise that was performed.
+    current.sets = current.sets.filter((s) => s.done);
+    session.exercises.splice(index + 1, 0, replacement);
+  } else session.exercises[index] = replacement;
+  return replacement;
 }
 export function validateBackup(data) {
   if (
@@ -212,6 +210,11 @@ export function validateBackup(data) {
         ),
     );
   const p = data.profile;
+  if (
+    p.equipmentPreference !== undefined &&
+    !["machines", "any"].includes(p.equipmentPreference)
+  )
+    throw Error("Preferência de equipamentos inválida.");
   if (
     typeof p.name !== "string" ||
     !["", "massa", "gordura", "manter", "condicionamento"].includes(p.goal) ||

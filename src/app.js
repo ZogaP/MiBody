@@ -10,11 +10,21 @@ import {
   goalText,
   initial,
   startSession,
+  substituteExercise,
   validateBackup,
   csv,
   nutrients,
 } from "./core.js";
 import { openDB, saveDB } from "./db.js";
+import {
+  MACHINE_CATALOG,
+  PPL_MACHINES,
+  machineExercise,
+  exerciseChoices,
+  isMachine,
+  addMachineLibrary,
+  addMachinePack,
+} from "./machines.js";
 
 const basePath = import.meta.env.BASE_URL;
 const iconURL = document.querySelector('link[rel="icon"]').href;
@@ -194,7 +204,66 @@ function homeView() {
 
 function workoutView() {
   if (state.active && tab === "sessao") return activeView();
-  return `${header("Treinos", "Consistência começa com um treino de cada vez.", btn(icon("plus", 16) + " Nova ficha", "new-template", "primary"))}<div class="tabs">${[["fichas", "Minhas fichas"], ["historico", "Histórico"], ["biblioteca", "Biblioteca"], ["arquivo", "Arquivadas"], ...(state.active ? [["sessao", "Treino em andamento"]] : [])].map(([v, l]) => btn(l, "workout-tab", tab === v ? "selected" : "", `data-tab="${v}"`)).join("")}</div>${tab === "historico" ? historyView() : tab === "biblioteca" ? libraryView() : templatesView(tab === "arquivo")}`;
+  return `${header("Treinos", "Consistência começa com um treino de cada vez.", btn(icon("plus", 16) + " Nova ficha", "new-template", "primary"))}<div class="tabs">${[["fichas", "Minhas fichas"], ["historico", "Histórico"], ["biblioteca", "Biblioteca"], ["arquivo", "Arquivadas"], ...(state.active ? [["sessao", "Treino em andamento"]] : [])].map(([v, l]) => btn(l, "workout-tab", tab === v ? "selected" : "", `data-tab="${v}"`)).join("")}</div>${tab === "fichas" ? `<section class="card plan-intro"><div><span class="badge">MÁQUINAS E POLIAS</span><h2>PPL + Upper + Lower</h2><p class="form-help">Cinco fichas de exemplo, na ordem da sua divisão. Prioridade para pino seletor, sem halteres ou anilhas.</p></div>${btn("Ver divisão", "machine-pack", "primary")}</section>` : ""}${tab === "historico" ? historyView() : tab === "biblioteca" ? libraryView() : templatesView(tab === "arquivo")}`;
+}
+function packPreview() {
+  const missing = PPL_MACHINES.filter(
+    (t) =>
+      !state.templates.some((x) => x.seedKey === "ppl-machines-v1:" + t.key),
+  );
+  const content = `<div class="note">Exemplos editáveis para organizar sua divisão. Séries, repetições e descansos são referências gerais; ajuste ao seu treino atual com o instrutor. As cargas ficam em branco.</div><p class="form-help spaced">Sugestão de distribuição: Push → Pull → Legs → descanso → Upper → Lower → descanso. Os dias abaixo são opcionais.</p>${PPL_MACHINES.map(
+    (t) =>
+      `<section class="plan-preview"><h3>${esc(t.name)}</h3><ol>${t.items
+        .map(([key, sets, reps]) => {
+          const e = MACHINE_CATALOG.find((e) => e.catalogKey === key);
+          return `<li><strong>${esc(e.name)}</strong><small>${sets} × ${esc(reps)} · ${esc(e.equipment)}</small></li>`;
+        })
+        .join(
+          "",
+        )}</ol>${missing.includes(t) ? select("Dia de " + t.key.charAt(0).toUpperCase() + t.key.slice(1), "day-" + t.key, [["", "Sem dia fixo"], ...[1, 2, 3, 4, 5, 6, 0].map((d) => [d, days[d]])]) : "<small>Ficha já adicionada. Edite os dias em Minhas fichas ou Arquivadas.</small>"}</section>`,
+  ).join(
+    "",
+  )}<div class="note spaced">Máquinas com anilhas, Smith e halteres não entram neste exemplo. Se só houver leg press com anilhas, escolha uma alternativa com o instrutor em vez de assumir que a carga é equivalente.</div>`;
+  modal(
+    "Sua divisão com máquinas",
+    content +
+      (missing.length
+        ? ""
+        : `<footer>${btn("Ver minhas fichas", "pack-close", "primary")}</footer>`),
+    missing.length ? "machine-pack" : "",
+    "Adicionar " + missing.length + " fichas",
+  );
+}
+let chooserContext = "",
+  chooserIndex = -1,
+  chooserMovement = "",
+  chooserMachines = true;
+function showExerciseChooser(
+  context = "draft",
+  index = -1,
+  keepFilters = false,
+) {
+  if (!keepFilters) {
+    chooserContext = context;
+    chooserIndex = index;
+    chooserMachines =
+      (state.profile.equipmentPreference || "machines") === "machines";
+    chooserMovement =
+      context === "replace" ? state.active.exercises[index].movement || "" : "";
+  }
+  let choices = exerciseChoices(
+    state.library,
+    (state.profile.equipmentPreference || "machines") === "machines",
+  );
+  if (chooserMachines) choices = choices.filter(isMachine);
+  if (chooserMovement)
+    choices = choices.filter((e) => e.movement === chooserMovement);
+  const current = context === "replace" ? state.active.exercises[index] : null;
+  if (current) choices = choices.filter((e) => e.name !== current.name);
+  modal(
+    context === "replace" ? "Escolher alternativa" : "Escolher exercício",
+    `<div class="row wrap"><label class="check"><input type="checkbox" id="chooser-machines" ${chooserMachines ? "checked" : ""}>Só máquinas e polias</label>${current?.movement ? `<label class="check"><input type="checkbox" id="chooser-movement" ${chooserMovement ? "checked" : ""}>Mesmo movimento</label>` : ""}</div><p class="form-help spaced">${current ? "Séries já concluídas serão preservadas no exercício original. Confira os ajustes e use uma nova carga para o novo aparelho." : "As máquinas e polias aparecem primeiro conforme sua preferência. Você pode ajustar as séries antes de adicionar."}</p><div class="stack spaced">${choices.map((e) => btn(`<span><strong>${esc(e.name)}</strong><small>${esc(e.group)} · ${esc(e.equipment || "Equipamento não informado")}</small></span>`, "choose-exercise", "exercise-choice", `data-id="${e.id}"`)).join("") || '<p class="form-help">Não há outra opção neste filtro. Desmarque “Mesmo movimento” para explorar o catálogo, ou configure um exercício personalizado.</p>'}</div><footer>${btn("Personalizar", "chooser-custom", "ghost")}${btn("Voltar", context === "draft" ? "back-template" : "close", "ghost")}</footer>`,
+  );
 }
 function templatesView(archived) {
   const list = state.templates.filter((t) => !!t.archived === archived);
@@ -202,7 +271,7 @@ function templatesView(archived) {
     ? `<div class="grid cols">${list
         .map(
           (t, i) =>
-            `<article class="card"><div class="card-head"><div class="row"><div class="workout-num">${String(i + 1).padStart(2, "0")}</div><div><h2>${esc(t.name)}</h2><small>${t.exercises.length} exercícios · ${t.days.length ? t.days.map((d) => days[d]).join(", ") : "Sem dia fixo"}</small></div></div>${btn(icon("edit", 17), "edit-template", "icon", `data-id="${t.id}" aria-label="Editar ficha"`)}</div>${t.exercises
+            `<article class="card"><div class="card-head"><div class="row"><div class="workout-num">${String(i + 1).padStart(2, "0")}</div><div><h2>${esc(t.name)}</h2><small>${t.exercises.length} exercícios · ${t.days.length ? t.days.map((d) => days[d]).join(", ") : "Sem dia fixo"}</small>${t.example ? '<span class="pill">Exemplo editável · máquinas</span>' : ""}</div></div>${btn(icon("edit", 17), "edit-template", "icon", `data-id="${t.id}" aria-label="Editar ficha"`)}</div>${t.exercises
               .slice(0, 4)
               .map(
                 (e) =>
@@ -216,7 +285,7 @@ function templatesView(archived) {
     : `<section class="card">${empty(archived ? "Nenhuma ficha arquivada" : "Um treino com a sua cara", archived ? "Ao arquivar uma ficha, seu histórico permanece salvo." : "Crie uma ficha com os exercícios que você já pratica ou que recebeu do seu profissional.", archived ? "" : "new-template", "Criar primeira ficha", "workout")}</section>`;
 }
 function libraryView() {
-  return `<div class="note">Biblioteca de nomes editável. Não é uma prescrição de exercícios. Séries e cargas devem seguir seu planejamento.</div><div class="section-label"><h2>Seus exercícios</h2>${btn("+ Exercício", "new-library", "primary")}</div><div class="card">${state.library.map((e) => `<div class="list-item row between"><div><h3>${esc(e.name)}</h3><p>${esc(e.group)} ${e.equipment ? "· " + esc(e.equipment) : ""}</p></div><div class="row">${btn(icon("edit", 16), "edit-library", "icon", `data-id="${e.id}" aria-label="Editar ${esc(e.name)}"`)}${btn(icon("trash", 16), "delete-library", "icon danger", `data-id="${e.id}" aria-label="Excluir ${esc(e.name)}"`)}</div></div>`).join("") || empty("Biblioteca vazia", "Cadastre exercícios para reutilizar nas fichas.", "new-library", "Novo exercício")}</div>`;
+  return `<div class="note">Biblioteca de nomes editável. Não é uma prescrição de exercícios. Séries e cargas devem seguir seu planejamento.</div><div class="section-label"><h2>Seus exercícios</h2><div class="row wrap">${btn("Máquinas e polias", "add-machine-library", "ghost")}${btn("+ Exercício", "new-library", "primary")}</div></div><div class="card">${state.library.map((e) => `<div class="list-item row between"><div><h3>${esc(e.name)}</h3><p>${esc(e.group)} ${e.equipment ? "· " + esc(e.equipment) : ""}</p></div><div class="row">${btn(icon("edit", 16), "edit-library", "icon", `data-id="${e.id}" aria-label="Editar ${esc(e.name)}"`)}${btn(icon("trash", 16), "delete-library", "icon danger", `data-id="${e.id}" aria-label="Excluir ${esc(e.name)}"`)}</div></div>`).join("") || empty("Biblioteca vazia", "Cadastre exercícios para reutilizar nas fichas.", "new-library", "Novo exercício")}</div>`;
 }
 function templateEditor(id) {
   editId = id || null;
@@ -228,7 +297,7 @@ function templateEditor(id) {
 function showTemplate() {
   modal(
     editId ? "Editar ficha" : "Nova ficha",
-    `<div class="form-grid">${input("Nome da ficha", "name", draft.name, "text", 'required maxlength="100" class="full"')}${weekdays(draft.days)}</div><div class="section-label"><h3>Exercícios na ordem do treino</h3></div><div id="draft-exercises">${draft.exercises.map((e, i) => `<div class="list-item"><div class="row between"><div><h3>${i + 1}. ${esc(e.name)}</h3><small>${e.sets} séries · ${esc(e.reps || "repetições livres")} · ${esc(e.kg || "—")} kg</small></div><div class="row">${btn("↑", "draft-up", "mini", `data-index="${i}" aria-label="Mover exercício para cima"`)}${btn(icon("edit", 15), "draft-edit", "icon", `data-index="${i}" aria-label="Editar exercício"`)}${btn(icon("close", 15), "draft-remove", "icon danger", `data-index="${i}" aria-label="Remover exercício"`)}</div></div></div>`).join("") || '<p class="form-help">Adicione pelo menos um exercício.</p>'}</div><div class="row wrap spaced">${btn("+ Exercício personalizado", "draft-new", "ghost")}${state.library.length ? btn("Usar biblioteca", "draft-library", "ghost") : ""}</div>`,
+    `<div class="form-grid">${input("Nome da ficha", "name", draft.name, "text", 'required maxlength="100" class="full"')}${weekdays(draft.days)}</div><div class="section-label"><h3>Exercícios na ordem do treino</h3></div><div id="draft-exercises">${draft.exercises.map((e, i) => `<div class="list-item"><div class="row between"><div><h3>${i + 1}. ${esc(e.name)}</h3><small>${e.sets} séries · ${esc(e.reps || "repetições livres")} · ${esc(e.kg || "—")} kg</small></div><div class="row">${btn("↑", "draft-up", "mini", `data-index="${i}" aria-label="Mover exercício para cima"`)}${btn(icon("edit", 15), "draft-edit", "icon", `data-index="${i}" aria-label="Editar exercício"`)}${btn(icon("close", 15), "draft-remove", "icon danger", `data-index="${i}" aria-label="Remover exercício"`)}</div></div></div>`).join("") || '<p class="form-help">Adicione pelo menos um exercício.</p>'}</div><div class="row wrap spaced">${btn("+ Exercício personalizado", "draft-new", "ghost")}${btn("Usar biblioteca", "draft-library", "ghost")}</div>`,
     "template",
   );
 }
@@ -245,10 +314,12 @@ function exerciseFields(e = {}) {
   return `<div class="form-grid">${input("Nome do exercício", "name", e.name, "text", 'required maxlength="120"')}${input("Grupo muscular", "group", e.group || "")}${input("Equipamento", "equipment", e.equipment || "")}${input("Séries", "sets", e.sets || 3, "number", 'min="1" max="30" required')}${input("Repetições previstas (ou faixa)", "reps", e.reps || "", "text", 'placeholder="Ex.: 8–12 ou 30 s"')}${decimal("Carga de referência (kg)", "kg", e.kg || "")}${input("Descanso (segundos)", "rest", e.rest ?? state.profile.rest, "number", 'min="0" max="3600" required')}${input("Vídeo demonstrativo (opcional)", "video", e.video || "", "url", 'placeholder="https://…"')}<label class="full">Observações<textarea name="notes" rows="2">${esc(e.notes || "")}</textarea></label></div>`;
 }
 let exerciseContext = "",
-  exerciseIndex = -1;
+  exerciseIndex = -1,
+  exerciseSource = {};
 function exerciseEditor(context, e = {}, index = -1) {
   exerciseContext = context;
   exerciseIndex = index;
+  exerciseSource = structuredClone(e);
   modal(
     context === "library-edit" ? "Editar exercício" : "Configurar exercício",
     exerciseFields(e),
@@ -258,7 +329,7 @@ function exerciseEditor(context, e = {}, index = -1) {
 function activeView() {
   const s = state.active,
     p = progress(s);
-  return `${header(esc(s.name), "Seu foco agora é a próxima série.", `<span class="badge">${s.pausedAt ? "PAUSADO" : "EM ANDAMENTO"}</span>`)}<div class="timer"><div><small>Tempo de treino</small><br><strong id="elapsed">${time(elapsed(s))}</strong></div><div id="rest-display"></div><div class="row">${btn(icon(s.pausedAt ? "play" : "pause", 16), s.pausedAt ? "resume" : "pause", "icon", `aria-label="${s.pausedAt ? "Continuar" : "Pausar"} treino"`)}${btn(icon("clock", 16), "rest", "icon", 'aria-label="Configurar descanso"')}</div></div><div class="row between spaced"><small>${p.done} de ${p.all} séries concluídas</small><strong>${p.all ? Math.round((p.done / p.all) * 100) : 0}%</strong></div>${bar(p.done, p.all)}<div class="note">Campos vazios são sugestões, não registros. Preencha carga e repetições antes de concluir a série. Para exercícios sem carga, registre 0 kg. O descanso alerta apenas com o app aberto.</div>${s.exercises
+  return `${header(esc(s.name), "Seu foco agora é a próxima série.", `<div class="row wrap"><span class="badge">${s.pausedAt ? "PAUSADO" : "EM ANDAMENTO"}</span>${btn("Minhas fichas", "session-to-templates", "mini")}</div>`)}<div class="timer"><div><small>Tempo de treino</small><br><strong id="elapsed">${time(elapsed(s))}</strong></div><div id="rest-display"></div><div class="row">${btn(icon(s.pausedAt ? "play" : "pause", 16), s.pausedAt ? "resume" : "pause", "icon", `aria-label="${s.pausedAt ? "Continuar" : "Pausar"} treino"`)}${btn(icon("clock", 16), "rest", "icon", 'aria-label="Configurar descanso"')}</div></div><div class="row between spaced"><small>${p.done} de ${p.all} séries concluídas</small><strong>${p.all ? Math.round((p.done / p.all) * 100) : 0}%</strong></div>${bar(p.done, p.all)}<div class="note">Campos vazios são sugestões, não registros. Preencha carga e repetições antes de concluir a série. Para exercícios sem carga, registre 0 kg. O descanso alerta apenas com o app aberto.</div>${s.exercises
     .map((e, i) => {
       const previous = state.sessions
         .slice()
@@ -588,6 +659,14 @@ function profileView() {
       ["light", "Claro"],
     ],
     p.theme,
+  )}${select(
+    "Prioridade de equipamentos",
+    "equipmentPreference",
+    [
+      ["machines", "Máquinas e polias primeiro"],
+      ["any", "Sem preferência"],
+    ],
+    p.equipmentPreference || "machines",
   )}${input("Descanso padrão (segundos)", "rest", p.rest, "number", 'required min="0" max="3600"')}${input("Atalho de água (ml)", "waterQuick", p.waterQuick || 250, "number", 'min="1" max="10000" required')}<label class="check"><input type="checkbox" name="autoRest" ${p.autoRest ? "checked" : ""}>Iniciar descanso ao concluir série</label></div><div class="inline-error" role="alert"></div><div class="spaced"><button class="primary" type="submit">Salvar perfil</button></div></form><div class="stack"><section class="card"><div class="card-head"><h2>Seus dados</h2>${icon("shield")}</div><p class="form-help">Armazenados neste navegador usando IndexedDB. Não são sincronizados entre aparelhos e podem ser removidos ao limpar os dados do navegador. Não enviamos dados ou fotos a servidores externos.</p><div class="stack spaced">${btn(icon("download", 17) + " Backup completo (JSON)", "backup", "primary")}${btn("Restaurar backup", "restore", "ghost")}${btn("Exportar registros (CSV)", "csv", "ghost")}${btn("Solicitar armazenamento persistente", "storage", "ghost")}${btn("Excluir todos os dados", "reset", "danger")}</div><input type="file" id="restore-file" accept="application/json,.json" hidden></section><section class="card"><h2>MiBody no seu celular</h2><p class="form-help spaced">${installInstructions()}</p>${installEvent ? `<div class="spaced">${btn("Instalar MiBody", "install", "primary")}</div>` : ""}<p class="form-help spaced">Após o primeiro acesso completo em HTTPS, o aplicativo pode abrir offline. Seus dados são salvos automaticamente. Alertas de descanso funcionam com o app aberto; não há notificações com o app fechado.</p><p id="offline-status" class="form-help spaced"></p></section><section class="note">MiBody 1.0 · Sem rastreadores.<br>Os registros ajudam a acompanhar sua rotina e não substituem orientação profissional.</section></div></div>`;
 }
 function installInstructions() {
@@ -742,6 +821,43 @@ function exportCSV() {
 }
 
 const actions = {
+  "machine-pack": packPreview,
+  "pack-close": () => {
+    close();
+    page = "workout";
+    tab = "fichas";
+    render();
+  },
+  "session-to-templates": () => {
+    tab = "fichas";
+    render();
+  },
+  "add-machine-library": async () => {
+    const count = addMachineLibrary(state);
+    await persist();
+    render();
+    toast(
+      count
+        ? `${count} exercícios adicionados à biblioteca.`
+        : "A biblioteca de máquinas já está disponível.",
+    );
+  },
+  "choose-exercise": (b) => {
+    const selected = exerciseChoices(state.library).find(
+      (e) => e.id === b.dataset.id,
+    );
+    if (!selected) throw Error("Exercício não encontrado.");
+    const e = structuredClone(selected);
+    if (chooserContext === "replace") {
+      const old = state.active.exercises[chooserIndex];
+      e.sets = Math.max(1, old.sets.filter((s) => !s.done).length);
+      e.reps = old.referenceReps || e.reps;
+      e.rest = old.rest;
+      e.kg = "";
+    }
+    exerciseEditor(chooserContext, e, chooserIndex);
+  },
+  "chooser-custom": () => exerciseEditor(chooserContext, {}, chooserIndex),
   close,
   nav: (b) => {
     page = b.dataset.page;
@@ -793,17 +909,7 @@ const actions = {
   },
   "draft-library": () => {
     syncDraft();
-    modal(
-      "Escolher da biblioteca",
-      `<div class="stack">${state.library.map((e) => btn(`${esc(e.name)} <small>${esc(e.group)}</small>`, "pick-library", "ghost", `data-id="${e.id}"`)).join("")}</div><footer>${btn("Voltar à ficha", "back-template", "ghost")}</footer>`,
-    );
-  },
-  "pick-library": (b) => {
-    draft.exercises.push({
-      ...structuredClone(state.library.find((e) => e.id === b.dataset.id)),
-      id: uid(),
-    });
-    showTemplate();
+    showExerciseChooser("draft");
   },
   "back-template": showTemplate,
   "duplicate-template": async (b) => {
@@ -811,6 +917,7 @@ const actions = {
       state.templates.find((t) => t.id === b.dataset.id),
     );
     t.id = uid();
+    delete t.seedKey;
     t.name += " (cópia)";
     state.templates.push(t);
     await persist();
@@ -980,8 +1087,16 @@ const actions = {
       "exercise-notes",
     );
   },
-  "replace-exercise": (b) => exerciseEditor("replace", {}, +b.dataset.index),
-  "session-add": () => exerciseEditor("session"),
+  "replace-exercise": (b) => {
+    const index = +b.dataset.index,
+      e = state.active.exercises[index];
+    if (e.sets.length && e.sets.every((s) => s.done))
+      return toast(
+        "Este exercício já foi concluído. Use + Exercício para acrescentar outro.",
+      );
+    showExerciseChooser("replace", index);
+  },
+  "session-add": () => showExerciseChooser("session"),
   finish: () => {
     if (!progress(state.active).done)
       return toast("Conclua pelo menos uma série antes de finalizar.");
@@ -1275,9 +1390,40 @@ function readForm(f) {
 function getExercise(d) {
   if (d.video && !/^https?:\/\//.test(d.video))
     throw Error("O vídeo deve usar um link http ou https.");
-  return { ...d, id: uid(), sets: num(d.sets), rest: num(d.rest), kg: d.kg };
+  const metadata = { ...exerciseSource };
+  if (
+    d.name !== metadata.name ||
+    d.equipment !== metadata.equipment ||
+    d.group !== metadata.group
+  ) {
+    delete metadata.catalogKey;
+    delete metadata.type;
+    delete metadata.movement;
+  }
+  return {
+    ...metadata,
+    ...d,
+    id: uid(),
+    sets: num(d.sets),
+    rest: num(d.rest),
+    kg: d.kg,
+  };
 }
 const forms = {
+  "machine-pack": async (d) => {
+    const assignments = Object.fromEntries(
+      PPL_MACHINES.map((t) => [t.key, d["day-" + t.key] ?? ""]),
+    );
+    const count = addMachinePack(state, assignments);
+    await persist();
+    close();
+    page = "workout";
+    tab = "fichas";
+    render();
+    toast(
+      `${count} fichas adicionadas. Ajuste os dias e as referências como preferir.`,
+    );
+  },
   template: async (d, f) => {
     syncDraft();
     if (!draft.name.trim()) throw Error("Dê um nome à ficha.");
@@ -1307,13 +1453,13 @@ const forms = {
         state.library[state.library.findIndex((x) => x.id === editId)] = e;
       } else state.library.push(e);
     } else {
-      const entry = startSession(
-        { id: "", name: "", exercises: [e] },
-        selectedDate,
-      ).exercises[0];
       if (exerciseContext === "replace")
-        state.active.exercises[exerciseIndex] = entry;
-      else state.active.exercises.push(entry);
+        substituteExercise(state.active, exerciseIndex, e);
+      else
+        state.active.exercises.push(
+          startSession({ id: "", name: "", exercises: [e] }, selectedDate)
+            .exercises[0],
+        );
     }
     await persist();
     close();
@@ -1631,6 +1777,16 @@ document.addEventListener("input", (event) => {
 });
 document.addEventListener("change", async (event) => {
   const el = event.target;
+  if (el.id === "chooser-machines") {
+    chooserMachines = el.checked;
+    showExerciseChooser(chooserContext, chooserIndex, true);
+  }
+  if (el.id === "chooser-movement") {
+    chooserMovement = el.checked
+      ? state.active.exercises[chooserIndex].movement
+      : "";
+    showExerciseChooser(chooserContext, chooserIndex, true);
+  }
   if (el.id === "date") {
     if (el.value) {
       selectedDate = el.value;

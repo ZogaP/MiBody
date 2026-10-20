@@ -65,6 +65,12 @@ APP_URL=http://localhost:4174/MiBody/ npm run test:e2e
 - **Evolução:** peso, medidas e fotos são opcionais. Gráficos, frequência, comparações e recordes usam somente registros reais.
 - **Perfil:** edite metas, tema, descanso automático e o atalho de água. Metas não são prescritas pelo app.
 
+### PPL + Upper + Lower com máquinas
+
+Em **Treinos → Ver divisão**, revise e adicione cinco fichas opcionais de exemplo: Push, Pull, Legs, Upper e Lower. Elas usam máquinas com pino seletor e polias, com cargas em branco e dias opcionais. Séries, repetições e descansos são referências editáveis; não são uma prescrição individual. O [guia da divisão](docs/ppl-maquinas.md) lista a sequência completa.
+
+Em **Perfil → Prioridade de equipamentos**, escolha “Máquinas e polias primeiro”. A biblioteca inclui aparelhos comuns, com notas para regulagem. Bibliotecas e históricos anteriores são preservados, e a importação das fichas não duplica exemplos já adicionados. No treino, **Substituir** oferece filtros de equipamento e movimento; séries já concluídas ficam no exercício original e a alternativa começa sem carga registrada.
+
 ## Dados e recuperação
 
 Cada alteração de registros é gravada automaticamente no IndexedDB. Em caso de falha, uma faixa de erro permanece visível. Exporte um backup antes de sair caso isso aconteça. Não há sincronização entre celulares, entre navegadores ou entre o navegador e uma instalação que use outro espaço de armazenamento.
@@ -81,6 +87,7 @@ npm run build
 # Em outro terminal, deixe npm run preview -- --port 4173 executando:
 npm run test:e2e
 npm run test:portable
+npm run test:machines
 ```
 
 O teste de navegador usa Chromium instalado em `/usr/bin/chromium`; outro caminho pode ser passado em `CHROMIUM_PATH`. Os testes usam um perfil temporário e não alteram seus dados pessoais. Capturas são geradas em `test-results/`, que não é versionado.
@@ -100,6 +107,7 @@ A versão autocontida foi testada em HTTP sem requisitar dependências externas,
 ## Organização
 
 - `src/core.js`: cálculos, criação de sessões, datas, CSV e validação de backup.
+- `src/machines.js`: catálogo de máquinas, divisão PPL + Upper + Lower e importação sem duplicidade.
 - `src/db.js`: transações IndexedDB.
 - `src/app.js`: telas, formulários, navegação e interações.
 - `src/style.css`: temas, layout responsivo e acessibilidade visual.
