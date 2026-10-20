@@ -2,6 +2,14 @@
 
 PWA pessoal em português do Brasil para treinos, alimentação e evolução corporal. Sem conta, backend, anúncios ou rastreadores. Os dados e fotos ficam no IndexedDB deste navegador.
 
+Identidade visual em roxo, preto e branco, com temas escuro e claro.
+
+## Abrir o aplicativo baixado
+
+Baixe o ZIP pelo GitHub e **extraia a pasta inteira** antes de abrir. O arquivo `MiBody.html` é uma versão autocontida com código, estilos e ícones embutidos; não exige instalar Node ou executar um servidor. O `index.html` local direciona para esse arquivo. Abrir o código-fonte pela página de arquivos do GitHub não executa o aplicativo.
+
+O uso de arquivos locais e IndexedDB depende das permissões do navegador. Navegadores gerenciados podem bloquear `file:`. Os dados não ficam dentro do HTML nem acompanham o arquivo: faça backups no Perfil. Para instalar no celular como PWA, use o site HTTPS; a versão em arquivo único não instala service worker e não oferece instalação. O build regenera `dist/MiBody.html`. Ao alterar o código, execute também `npm run export:portable` para atualizar e versionar `MiBody.html` na raiz.
+
 ## Interface
 
 <img src="docs/tela-inicial.png" alt="Tela inicial do MiBody sem registros pessoais" width="320">
@@ -72,11 +80,14 @@ npm test
 npm run build
 # Em outro terminal, deixe npm run preview -- --port 4173 executando:
 npm run test:e2e
+npm run test:portable
 ```
 
 O teste de navegador usa Chromium instalado em `/usr/bin/chromium`; outro caminho pode ser passado em `CHROMIUM_PATH`. Os testes usam um perfil temporário e não alteram seus dados pessoais. Capturas são geradas em `test-results/`, que não é versionado.
 
 Os testes cobrem cálculos, validação de backup, snapshots do histórico, fluxo de treino, recuperação, relógio, alimentação, plano separado, backup/restauração, medidas, gravação offline e larguras móveis e desktop. A instalação e os alertas em Android/iPhone físicos ainda exigem validação nesses dispositivos.
+
+A versão autocontida foi testada em HTTP sem requisitar dependências externas, incluindo persistência, treino e backup. O redirecionamento do `index.html` local é testado separadamente. A execução direta via `file:` não pôde ser validada neste ambiente, cujo navegador gerenciado bloqueia esse protocolo.
 
 ## Limites explícitos
 

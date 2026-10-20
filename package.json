@@ -5,10 +5,12 @@
   "type": "module",
   "scripts": {
     "dev": "vite --host 0.0.0.0",
-    "build": "vite build",
+    "build": "vite build && node scripts/portable.mjs",
+    "export:portable": "node scripts/portable.mjs --export",
     "preview": "vite preview --host 0.0.0.0",
     "test": "node --test tests/core.test.js",
-    "test:e2e": "node tests/browser.mjs"
+    "test:e2e": "node tests/browser.mjs",
+    "test:portable": "node tests/portable.mjs"
   },
   "devDependencies": {
     "playwright-core": "1.58.2",

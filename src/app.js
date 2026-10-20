@@ -17,6 +17,8 @@ import {
 import { openDB, saveDB } from "./db.js";
 
 const basePath = import.meta.env.BASE_URL;
+const iconURL = document.querySelector('link[rel="icon"]').href;
+const portable = document.documentElement.dataset.portable === "true";
 const $ = (s) => document.querySelector(s);
 const esc = (v) =>
   String(v ?? "").replace(
@@ -161,7 +163,7 @@ function render() {
     ["user", "Perfil"],
   ];
   $("#app").innerHTML =
-    `<div class="shell"><aside class="sidebar"><div><div class="brand"><img src="${basePath}icon.svg" alt=""><span>Mi<span>Body</span></span></div><p class="tagline">SEU RITMO. SUA EVOLUÇÃO.</p></div><nav aria-label="Navegação principal">${nav.map(([id, name]) => btn(`${icon(id)}<span>${name}</span>`, "nav", page === id ? "active" : "", `data-page="${id}" ${page === id ? 'aria-current="page"' : ""}`)).join("")}</nav><div class="sidebar-foot"><div class="avatar">${esc((state.profile.name || "M").slice(0, 1).toUpperCase())}</div><div><h3 style="font-size:12px">${esc(state.profile.name || "Seu espaço pessoal")}</h3><small>Um dia de cada vez.</small></div></div></aside><main class="main"><div class="topbar"><span class="eyebrow">SEU ESPAÇO DE CUIDADO</span><div class="brand mobile-brand"><img src="${basePath}icon.svg" alt=""><span>Mi<span>Body</span></span></div><div class="row"><span class="status"><i class="dot"></i><span id="online-status">${navigator.onLine ? "Salvo neste dispositivo" : "Modo offline"}</span></span><input class="date-input" id="date" aria-label="Data dos registros" type="date" value="${selectedDate}">${btn(icon("sun", 18), "theme", "icon", 'aria-label="Alternar tema"')}</div></div>${{ home: homeView, workout: workoutView, food: foodView, chart: evolutionView, user: profileView }[page]()}<p class="info-line">${icon("shield", 14)} Seus dados ficam neste dispositivo. Faça backups regularmente.</p></main></div>`;
+    `<div class="shell"><aside class="sidebar"><div><div class="brand"><img src="${iconURL}" alt=""><span>Mi<span>Body</span></span></div><p class="tagline">SEU RITMO. SUA EVOLUÇÃO.</p></div><nav aria-label="Navegação principal">${nav.map(([id, name]) => btn(`${icon(id)}<span>${name}</span>`, "nav", page === id ? "active" : "", `data-page="${id}" ${page === id ? 'aria-current="page"' : ""}`)).join("")}</nav><div class="sidebar-foot"><div class="avatar">${esc((state.profile.name || "M").slice(0, 1).toUpperCase())}</div><div><h3 style="font-size:12px">${esc(state.profile.name || "Seu espaço pessoal")}</h3><small>Um dia de cada vez.</small></div></div></aside><main class="main"><div class="topbar"><span class="eyebrow">SEU ESPAÇO DE CUIDADO</span><div class="brand mobile-brand"><img src="${iconURL}" alt=""><span>Mi<span>Body</span></span></div><div class="row"><span class="status"><i class="dot"></i><span id="online-status">${navigator.onLine ? "Salvo neste dispositivo" : "Modo offline"}</span></span><input class="date-input" id="date" aria-label="Data dos registros" type="date" value="${selectedDate}">${btn(icon("sun", 18), "theme", "icon", 'aria-label="Alternar tema"')}</div></div>${{ home: homeView, workout: workoutView, food: foodView, chart: evolutionView, user: profileView }[page]()}<p class="info-line">${icon("shield", 14)} Seus dados ficam neste dispositivo. Faça backups regularmente.</p></main></div>`;
   tick();
 }
 
@@ -509,7 +511,7 @@ function lineChart(points) {
     35 + (points.length === 1 ? 0.5 : i / (points.length - 1)) * 310,
     125 - ((p.value - min) / range) * 90,
   ]);
-  return `<svg class="chart" viewBox="0 0 380 165" role="img" aria-label="Evolução de ${fmt(values[0], 1)} para ${fmt(values.at(-1), 1)}"><path d="M35 30H350M35 75H350M35 125H350" stroke="var(--line)" fill="none"/><polyline points="${coords.map((p) => p.join(",")).join(" ")}" fill="none" stroke="var(--green)" stroke-width="2.5"/>${coords.map(([x, y], i) => `<circle cx="${x}" cy="${y}" r="4" fill="var(--green)"><title>${points[i].date}: ${fmt(points[i].value, 1)}</title></circle>`).join("")}<text x="35" y="151">${dateLabel(points[0].date)}</text><text x="350" y="151" text-anchor="end">${dateLabel(points.at(-1).date)}</text><text x="4" y="31">${fmt(max, 1)}</text><text x="4" y="126">${fmt(min, 1)}</text></svg>`;
+  return `<svg class="chart" viewBox="0 0 380 165" role="img" aria-label="Evolução de ${fmt(values[0], 1)} para ${fmt(values.at(-1), 1)}"><path d="M35 30H350M35 75H350M35 125H350" stroke="var(--line)" fill="none"/><polyline points="${coords.map((p) => p.join(",")).join(" ")}" fill="none" stroke="var(--accent)" stroke-width="2.5"/>${coords.map(([x, y], i) => `<circle cx="${x}" cy="${y}" r="4" fill="var(--accent)"><title>${points[i].date}: ${fmt(points[i].value, 1)}</title></circle>`).join("")}<text x="35" y="151">${dateLabel(points[0].date)}</text><text x="350" y="151" text-anchor="end">${dateLabel(points.at(-1).date)}</text><text x="4" y="31">${fmt(max, 1)}</text><text x="4" y="126">${fmt(min, 1)}</text></svg>`;
 }
 let selectedExercise = "";
 function exerciseProgress() {
@@ -589,6 +591,8 @@ function profileView() {
   )}${input("Descanso padrão (segundos)", "rest", p.rest, "number", 'required min="0" max="3600"')}${input("Atalho de água (ml)", "waterQuick", p.waterQuick || 250, "number", 'min="1" max="10000" required')}<label class="check"><input type="checkbox" name="autoRest" ${p.autoRest ? "checked" : ""}>Iniciar descanso ao concluir série</label></div><div class="inline-error" role="alert"></div><div class="spaced"><button class="primary" type="submit">Salvar perfil</button></div></form><div class="stack"><section class="card"><div class="card-head"><h2>Seus dados</h2>${icon("shield")}</div><p class="form-help">Armazenados neste navegador usando IndexedDB. Não são sincronizados entre aparelhos e podem ser removidos ao limpar os dados do navegador. Não enviamos dados ou fotos a servidores externos.</p><div class="stack spaced">${btn(icon("download", 17) + " Backup completo (JSON)", "backup", "primary")}${btn("Restaurar backup", "restore", "ghost")}${btn("Exportar registros (CSV)", "csv", "ghost")}${btn("Solicitar armazenamento persistente", "storage", "ghost")}${btn("Excluir todos os dados", "reset", "danger")}</div><input type="file" id="restore-file" accept="application/json,.json" hidden></section><section class="card"><h2>MiBody no seu celular</h2><p class="form-help spaced">${installInstructions()}</p>${installEvent ? `<div class="spaced">${btn("Instalar MiBody", "install", "primary")}</div>` : ""}<p class="form-help spaced">Após o primeiro acesso completo em HTTPS, o aplicativo pode abrir offline. Seus dados são salvos automaticamente. Alertas de descanso funcionam com o app aberto; não há notificações com o app fechado.</p><p id="offline-status" class="form-help spaced"></p></section><section class="note">MiBody 1.0 · Sem rastreadores.<br>Os registros ajudam a acompanhar sua rotina e não substituem orientação profissional.</section></div></div>`;
 }
 function installInstructions() {
+  if (portable)
+    return "Você está usando a versão em arquivo único. A instalação como PWA exige a versão hospedada em HTTPS. Faça backup antes de mover o arquivo ou trocar de navegador; os dados não acompanham o HTML automaticamente.";
   if (matchMedia("(display-mode: standalone)").matches || navigator.standalone)
     return "O MiBody já está aberto como aplicativo instalado.";
   if (/iPhone|iPad|iPod/.test(navigator.userAgent))
@@ -1762,7 +1766,7 @@ async function boot() {
     if (!state.onboarded) {
       modal(
         "Bem-vindo ao seu ritmo",
-        `<div class="onboard"><img src="${basePath}icon.svg" alt="MiBody"><h2>Um lugar para<br>cuidar de você.</h2><p>Treinos, alimentação e evolução corporal. Tudo no seu dispositivo, sem conta e sem distrações.</p><div class="stack spaced">${btn("Configurar meu perfil", "onboard-profile", "primary")}${btn("Começar sem configurar", "onboard-skip", "ghost")}</div><p style="font-size:12px">Seus dados não sincronizam entre aparelhos. Exporte backups no Perfil.</p></div>`,
+        `<div class="onboard"><img src="${iconURL}" alt="MiBody"><h2>Um lugar para<br>cuidar de você.</h2><p>Treinos, alimentação e evolução corporal. Tudo no seu dispositivo, sem conta e sem distrações.</p><div class="stack spaced">${btn("Configurar meu perfil", "onboard-profile", "primary")}${btn("Começar sem configurar", "onboard-skip", "ghost")}</div><p style="font-size:12px">Seus dados não sincronizam entre aparelhos. Exporte backups no Perfil.</p></div>`,
       );
     }
   } catch (e) {
@@ -1773,7 +1777,7 @@ async function boot() {
       '<main class="main"><h1>MiBody</h1><p>Seus dados precisam de um lugar seguro neste dispositivo.</p><button onclick="location.reload()">Tentar novamente</button></main>';
     return;
   }
-  if ("serviceWorker" in navigator && import.meta.env.PROD) {
+  if ("serviceWorker" in navigator && import.meta.env.PROD && !portable) {
     try {
       const reg = await navigator.serviceWorker.register(`${basePath}sw.js`, {
         scope: basePath,

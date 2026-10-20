@@ -6,7 +6,7 @@
       name="viewport"
       content="width=device-width,initial-scale=1,viewport-fit=cover"
     />
-    <meta name="theme-color" content="#b6f34b" />
+    <meta name="theme-color" content="#7c3aed" />
     <meta
       name="description"
       content="Seu espaço pessoal para treinar, se alimentar e acompanhar sua evolução."
@@ -19,9 +19,36 @@
   </head>
   <body>
     <div id="storage-error" role="alert" hidden></div>
-    <div id="app"></div>
+    <div id="app">
+      <main
+        style="
+          font-family: system-ui;
+          padding: 32px;
+          background: #09090b;
+          color: white;
+          min-height: 100vh;
+        "
+      >
+        <h1>MiBody</h1>
+        <p>Abrindo seu espaço pessoal…</p>
+        <p>
+          Se esta tela permanecer,
+          <a href="./MiBody.html" style="color: #c4b5fd"
+            >abra a versão em arquivo único</a
+          >.
+        </p>
+      </main>
+    </div>
     <dialog id="modal"></dialog>
     <div id="toast" role="status"></div>
+    <script>
+      if (
+        location.protocol === "file:" &&
+        document.documentElement.dataset.portable !== "true"
+      ) {
+        location.replace(new URL("MiBody.html", location.href).href);
+      }
+    </script>
     <script type="module" src="/src/app.js"></script>
   </body>
 </html>

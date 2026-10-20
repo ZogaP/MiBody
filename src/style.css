@@ -7,17 +7,18 @@
     BlinkMacSystemFont,
     "Segoe UI",
     sans-serif;
-  color: #f0f2ed;
-  background: #101210;
+  color: #ffffff;
+  background: #09090b;
   font-synthesis: none;
-  --bg: #101210;
-  --panel: #1a1d19;
-  --panel2: #222620;
-  --line: #30362c;
-  --muted: #a2aa9c;
-  --text: #f0f2ed;
-  --green: #b6f34b;
-  --ink: #18220b;
+  --bg: #09090b;
+  --panel: #151517;
+  --panel2: #222225;
+  --line: #343438;
+  --muted: #ada8b5;
+  --text: #ffffff;
+  --accent: #c4b5fd;
+  --ink: #ffffff;
+  --primary: #7c3aed;
   --red: #ff9e93;
   color-scheme: dark;
 }
@@ -28,13 +29,14 @@ body {
   margin: 0;
 }
 body.light {
-  --bg: #f2f4ed;
+  --bg: #f7f5fa;
   --panel: #fff;
-  --panel2: #e8eddf;
-  --line: #d4dbc9;
-  --muted: #5d6655;
-  --text: #20271a;
-  --green: #b6f34b;
+  --panel2: #eeebf4;
+  --line: #ddd7e6;
+  --muted: #645b70;
+  --text: #0c0b0e;
+  --accent: #6d28d9;
+  --primary: #6d28d9;
   --red: #ad3427;
   color-scheme: light;
   background: var(--bg);
@@ -72,7 +74,7 @@ button:disabled {
   cursor: wait;
 }
 button.primary {
-  background: var(--green);
+  background: var(--primary);
   color: var(--ink);
   border-color: transparent;
 }
@@ -129,7 +131,7 @@ small {
   font-weight: 700;
 }
 .accent {
-  color: var(--green);
+  color: var(--accent);
 }
 .shell {
   max-width: 1440px;
@@ -162,7 +164,7 @@ small {
   border-radius: 12px;
 }
 .brand span span {
-  color: var(--green);
+  color: var(--accent);
 }
 .tagline {
   margin-top: 9px;
@@ -186,11 +188,11 @@ nav button {
   font-size: 14px;
 }
 nav button.active {
-  background: #b6f34b15;
-  color: var(--green);
+  background: #c4b5fd15;
+  color: var(--accent);
 }
 body.light nav button.active {
-  color: #476900;
+  color: #6d28d9;
 }
 .sidebar-foot {
   margin-top: auto;
@@ -207,7 +209,7 @@ body.light nav button.active {
   background: var(--panel2);
   display: grid;
   place-items: center;
-  color: var(--green);
+  color: var(--accent);
   font-size: 14px;
 }
 .main {
@@ -233,7 +235,7 @@ body.light nav button.active {
 .dot {
   width: 6px;
   height: 6px;
-  background: var(--green);
+  background: var(--accent);
   border-radius: 50%;
 }
 .date-input {
@@ -299,8 +301,8 @@ body.light nav button.active {
   letter-spacing: 0;
 }
 .stat-icon {
-  color: var(--green);
-  background: #b6f34b12;
+  color: var(--accent);
+  background: #c4b5fd12;
   width: 36px;
   height: 36px;
   display: grid;
@@ -309,7 +311,7 @@ body.light nav button.active {
   margin-bottom: 20px;
 }
 .hero {
-  background: linear-gradient(120deg, #b6f34b0e, var(--panel) 65%);
+  background: linear-gradient(120deg, #c4b5fd0e, var(--panel) 65%);
   position: relative;
   overflow: hidden;
 }
@@ -321,7 +323,7 @@ body.light nav button.active {
   font-size: 220px;
   font-style: italic;
   line-height: 1;
-  color: #b6f34b05;
+  color: #c4b5fd05;
   pointer-events: none;
   font-weight: 900;
 }
@@ -337,8 +339,8 @@ body.light nav button.active {
 .badge {
   display: inline-flex;
   border-radius: 7px;
-  background: #b6f34b15;
-  color: var(--green);
+  background: #c4b5fd15;
+  color: var(--accent);
   font-size: 10px;
   letter-spacing: 1px;
   text-transform: uppercase;
@@ -346,7 +348,7 @@ body.light nav button.active {
   font-weight: 750;
 }
 body.light .badge {
-  color: #486807;
+  color: #6d28d9;
 }
 .empty {
   padding: 22px 0;
@@ -403,7 +405,7 @@ body.light .badge {
   display: block;
   height: 100%;
   border-radius: 20px;
-  background: var(--green);
+  background: var(--accent);
 }
 .macro-row {
   display: grid;
@@ -420,10 +422,10 @@ body.light .badge {
   height: 4px;
 }
 .macro-row > div:nth-child(2) .progress i {
-  background: #e7be7c;
+  background: #a78bfa;
 }
 .macro-row > div:nth-child(3) .progress i {
-  background: #ad9bed;
+  background: #ddd6fe;
 }
 .ring {
   width: 116px;
@@ -431,7 +433,7 @@ body.light .badge {
   border-radius: 50%;
   display: grid;
   place-items: center;
-  background: conic-gradient(var(--green) var(--angle), var(--panel2) 0);
+  background: conic-gradient(var(--accent) var(--angle), var(--panel2) 0);
   flex-shrink: 0;
 }
 .ring > div {
@@ -463,7 +465,7 @@ body.light .badge {
   font-size: 12px;
 }
 .quick svg {
-  color: var(--green);
+  color: var(--accent);
 }
 .water-drops {
   display: flex;
@@ -472,7 +474,7 @@ body.light .badge {
   margin: 22px 0;
 }
 .water-drops svg {
-  color: #80c8f0;
+  color: var(--accent);
 }
 .water-drops .dim {
   opacity: 0.18;
@@ -523,7 +525,7 @@ body.light .badge {
   opacity: 0.65;
 }
 .set.done button {
-  background: var(--green);
+  background: var(--primary);
   color: var(--ink);
 }
 label {
@@ -549,14 +551,14 @@ select:focus,
 textarea:focus,
 button:focus-visible,
 a:focus-visible {
-  outline: 2px solid var(--green);
+  outline: 2px solid var(--accent);
   outline-offset: 3px;
 }
 input[type="checkbox"] {
   width: 19px;
   height: 19px;
   min-height: 19px;
-  accent-color: var(--green);
+  accent-color: var(--accent);
 }
 .check {
   flex-direction: row;
@@ -617,7 +619,7 @@ legend {
   bottom: 30px;
   left: 50%;
   transform: translateX(-50%);
-  background: var(--green);
+  background: var(--primary);
   color: var(--ink);
   border-radius: 13px;
   padding: 14px 22px;
@@ -665,13 +667,13 @@ legend {
 }
 .timer strong {
   font-variant-numeric: tabular-nums;
-  color: var(--green);
+  color: var(--accent);
 }
 a {
-  color: var(--green);
+  color: var(--accent);
 }
 body.light a {
-  color: #466d00;
+  color: #6d28d9;
 }
 .chart {
   width: 100%;
@@ -702,14 +704,14 @@ body.light a {
   font-size: 12px;
 }
 .calendar .trained {
-  border-color: var(--green);
-  color: var(--green);
+  border-color: var(--accent);
+  color: var(--accent);
 }
 body.light .calendar .trained {
-  color: #476900;
+  color: #6d28d9;
 }
 .calendar .chosen {
-  background: var(--green);
+  background: var(--primary);
   color: var(--ink);
 }
 .calendar small {
@@ -793,7 +795,7 @@ td {
   background: var(--panel2);
   display: grid;
   place-items: center;
-  color: var(--green);
+  color: var(--accent);
   font-weight: 700;
   flex-shrink: 0;
 }

@@ -36,7 +36,9 @@ async function stored() {
 try {
   await page.goto(process.env.APP_URL || "http://localhost:4173");
   await action("onboard-skip").click();
-  await page.evaluate(() => navigator.serviceWorker.ready);
+  await page.evaluate(() =>
+    location.protocol === "file:" ? undefined : navigator.serviceWorker.ready,
+  );
   await page.reload();
   await action("new-template").click();
   await fill("name", "Treino A — Peito");
