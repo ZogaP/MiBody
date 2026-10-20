@@ -489,7 +489,7 @@ body.light .badge {
   background: transparent;
   color: var(--muted);
 }
-.tabs button.selected {
+button.selected {
   background: var(--panel2);
   color: var(--text);
   border-color: var(--muted);
@@ -1158,6 +1158,22 @@ td {
 .card-head .pill {
   display: inline-block;
   margin-top: 8px;
+}
+.meal-option h3 {
+  margin: 16px 0 10px;
+  font-size: 18px;
+}
+.meal-option .form-help {
+  margin-bottom: 16px;
+}
+.meal-option small {
+  display: block;
+}
+.menu-date {
+  margin-bottom: 22px;
+}
+.menu-date h2 {
+  margin-top: 6px;
 }
 @media (max-width: 700px) {
   .plan-intro {

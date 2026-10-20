@@ -73,6 +73,7 @@ export function initial() {
     water: [],
     body: [],
     plans: [],
+    planDays: [],
     favorites: [],
     meals: [
       "Café da manhã",
@@ -307,6 +308,27 @@ export function validateBackup(data) {
     !data.library.every(exercise)
   )
     throw Error("Biblioteca inválida.");
+  // Older version-1 backups have no daily plans and remain valid.
+  if (
+    data.planDays !== undefined &&
+    (!Array.isArray(data.planDays) ||
+      data.planDays.length > 100000 ||
+      new Set(data.planDays.map((r) => r?.id)).size !== data.planDays.length ||
+      new Set(data.planDays.map((r) => r?.date)).size !==
+        data.planDays.length ||
+      !data.planDays.every(
+        (r) =>
+          id(r) &&
+          date(r) &&
+          Array.isArray(r.items) &&
+          r.items.length <= 100000 &&
+          new Set(r.items.map((i) => i?.id)).size === r.items.length &&
+          r.items.every(
+            (i) => food(i) && finite(i.quantity) && data.meals.includes(i.meal),
+          ),
+      ))
+  )
+    throw Error("Cardápios por data inválidos.");
   return data;
 }
 export function csv(rows, columns) {

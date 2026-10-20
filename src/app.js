@@ -32,6 +32,19 @@ import {
   addMachinePack,
 } from "./machines.js";
 
+import {
+  MEAL_OPTIONS,
+  MENU_FOODS,
+  LABEL_INGREDIENTS,
+  ingredientNote,
+  optionRows,
+  chooseMealOption,
+  plannedRows,
+  planForDate,
+  ensurePlanDay,
+  copyDayPlan,
+} from "./menus.js";
+
 const basePath = import.meta.env.BASE_URL;
 const iconURL = document.querySelector('link[rel="icon"]').href;
 const portable = document.documentElement.dataset.portable === "true";
@@ -107,6 +120,12 @@ let state,
   period = "90",
   historyFilter = "",
   foodTab = "diario",
+  planScope = "day",
+  optionGroup = "all",
+  optionMeal = "",
+  optionReturn = null,
+  optionLabelKey = null,
+  optionDraft = null,
   installEvent = null,
   lastRest = null,
   draft = null,
@@ -145,6 +164,8 @@ function modal(title, content, submit = "", label = "Salvar") {
   if (!m.open) m.showModal();
 }
 function close() {
+  optionReturn = null;
+  optionDraft = null;
   $("#modal").close();
 }
 function empty(title, text, action, label, ico = "plus") {
@@ -411,6 +432,7 @@ function foodView() {
   return `${header("Alimentação", "Mais consciência em cada refeição.", btn(icon("plus", 16) + " Registrar", "add-entry", "primary"))}<div class="tabs">${[
     ["diario", "Diário alimentar"],
     ["plano", "Meu plano alimentar"],
+    ["opcoes", "Opções de cardápio"],
     ["alimentos", "Meus alimentos"],
     ["frequentes", "Refeições frequentes"],
   ]
@@ -418,31 +440,129 @@ function foodView() {
       btn(l, "food-tab", foodTab === v ? "selected" : "", `data-tab="${v}"`),
     )
     .join("")}</div>${
-    foodTab === "alimentos"
-      ? foodLibrary()
-      : foodTab === "frequentes"
-        ? favoritesView()
-        : `${
-            foodTab === "plano"
-              ? plannedOverview()
-              : `<section class="card"><div class="row between"><div><small>CONSUMIDO EM ${dateLabel(selectedDate).toUpperCase()}</small><div class="metric">${fmt(t.kcal)} <span>kcal ${state.profile.kcal ? " / " + fmt(state.profile.kcal) : ""}</span></div><small>${esc(goalText(t.kcal, state.profile.kcal, "kcal"))}</small></div>${icon("food", 28)}</div><div class="macro-row">${[
-                  ["protein", "Proteínas"],
-                  ["carbs", "Carboidratos"],
-                  ["fat", "Gorduras"],
-                ]
-                  .map(
-                    ([k, l]) =>
-                      `<div><small>${l}</small><strong>${fmt(t[k], 1)} g</strong>${bar(t[k], state.profile[k])}<small>${esc(goalText(t[k], state.profile[k], "g"))}</small></div>`,
-                  )
-                  .join(
-                    "",
-                  )}</div><p class="form-help spaced">Fibras: ${fmt(t.fiber, 1)} g · Sódio: ${fmt(t.sodium)} mg</p></section>`
-          }<div class="section-label"><h2>${foodTab === "plano" ? "Suas refeições planejadas" : "Suas refeições"}</h2><div class="row">${btn("Editar refeições", "edit-meals", "mini")}${foodTab === "plano" ? btn("+ Planejar", "add-plan", "primary mini") : ""}</div></div><div class="grid cols">${state.meals.map((meal) => mealCard(meal, foodTab === "plano")).join("")}</div>`
+    foodTab === "opcoes"
+      ? mealOptionsView()
+      : foodTab === "alimentos"
+        ? foodLibrary()
+        : foodTab === "frequentes"
+          ? favoritesView()
+          : `${
+              foodTab === "plano"
+                ? plannedOverview()
+                : `<section class="card"><div class="row between"><div><small>CONSUMIDO EM ${dateLabel(selectedDate).toUpperCase()}</small><div class="metric">${fmt(t.kcal)} <span>kcal ${state.profile.kcal ? " / " + fmt(state.profile.kcal) : ""}</span></div><small>${esc(goalText(t.kcal, state.profile.kcal, "kcal"))}</small></div>${icon("food", 28)}</div><div class="macro-row">${[
+                    ["protein", "Proteínas"],
+                    ["carbs", "Carboidratos"],
+                    ["fat", "Gorduras"],
+                  ]
+                    .map(
+                      ([k, l]) =>
+                        `<div><small>${l}</small><strong>${fmt(t[k], 1)} g</strong>${bar(t[k], state.profile[k])}<small>${esc(goalText(t[k], state.profile[k], "g"))}</small></div>`,
+                    )
+                    .join(
+                      "",
+                    )}</div><p class="form-help spaced">Fibras: ${fmt(t.fiber, 1)} g · Sódio: ${fmt(t.sodium)} mg</p></section>`
+            }<div class="section-label"><h2>${foodTab === "plano" ? "Suas refeições planejadas" : "Suas refeições"}</h2><div class="row">${btn("Editar refeições", "edit-meals", "mini")}${foodTab === "plano" ? btn("+ Planejar", "add-plan", "primary mini") : ""}</div></div><div class="grid cols">${state.meals.map((meal) => mealCard(meal, foodTab === "plano")).join("")}</div>`
   }`;
 }
+function currentPlans() {
+  return planScope === "default"
+    ? state.plans
+    : plannedRows(state, selectedDate);
+}
+function dateNavigation() {
+  return `<div class="card menu-date row between wrap spaced"><div><small>CARDÁPIO DA DATA</small><h2>${dateLabel(selectedDate)}</h2></div><div class="row">${btn("← Anterior", "menu-date", "mini", 'data-offset="-1"')}${btn("Próximo →", "menu-date", "mini", 'data-offset="1"')}</div></div>`;
+}
 function plannedOverview() {
-  const t = total(state.plans);
-  return `<section class="card plan-intro"><div><span class="badge">COMIDA DO DIA A DIA</span><h2>Um plano econômico</h2><p class="form-help">Exemplo editável com arroz, feijão, ovos, frango e alimentos comuns. Confira as quantidades e os ingredientes antes de adicionar.</p></div>${btn("Ver exemplo econômico", "budget-preview", "primary")}</section><div class="note">Planejar não registra consumo. Use “Registrar consumo” em cada alimento somente quando você comer.</div>${state.plans.length ? `<section class="card spaced"><small>TOTAL PLANEJADO · ESTIMATIVAS</small><div class="metric">${fmt(t.kcal)} <span>kcal</span></div><p class="form-help">Proteínas: ${fmt(t.protein, 1)} g · Carboidratos: ${fmt(t.carbs, 1)} g · Gorduras: ${fmt(t.fat, 1)} g</p></section>` : ""}`;
+  const rows = currentPlans(),
+    t = total(rows),
+    custom = planForDate(state, selectedDate);
+  return `${dateNavigation()}<section class="card plan-intro"><div><span class="badge">VARIE DURANTE A SEMANA</span><h2>Escolha o que comer em cada dia</h2><p class="form-help">Vitaminas para café e lanche; arroz, feijão, frango, ovos e macarrão para as refeições principais.</p></div>${btn("Explorar opções", "menu-options", "primary")}</section><div class="row wrap spaced">${btn("Plano desta data", "plan-scope", planScope === "day" ? "selected" : "mini", 'data-scope="day"')}${btn("Plano padrão", "plan-scope", planScope === "default" ? "selected" : "mini", 'data-scope="default"')}${planScope === "day" ? btn("Copiar cardápio para outra data", "copy-plan-day", "mini") : ""}${custom && planScope === "day" ? btn("Voltar ao padrão nesta data", "reset-plan-day", "mini") : ""}</div><p class="form-help spaced">${planScope === "default" ? "Editando o plano padrão usado nos dias sem cardápio próprio. Cardápios já personalizados são preservados." : custom ? `Cardápio próprio de ${dateLabel(selectedDate)}. Alterações aqui valem somente para esta data.` : `Esta data usa o plano padrão. Você pode editá-lo ou ${btn("Personalizar somente esta data", "customize-plan-day", "mini")}.`}</p><div class="note spaced">Planejar não registra consumo. Use “Registrar consumo” somente quando comer. As opções têm totais diferentes; confira as porções e suas metas.</div>${rows.length ? `<section class="card spaced"><small>TOTAL PLANEJADO · ESTIMATIVAS</small><div class="metric">${fmt(t.kcal)} <span>kcal</span></div><p class="form-help">Proteínas: ${fmt(t.protein, 1)} g · Carboidratos: ${fmt(t.carbs, 1)} g · Gorduras: ${fmt(t.fat, 1)} g</p></section>` : ""}<div class="row wrap spaced">${btn("Ver exemplo econômico", "budget-preview", "ghost")}</div>`;
+}
+function mealOptionsView() {
+  const options = MEAL_OPTIONS.filter(
+    (o) => optionGroup === "all" || o.group === optionGroup,
+  );
+  return `${dateNavigation()}<div class="section-label"><div><h2>Opções para variar</h2><p class="form-help">Escolha uma combinação, ajuste as porções e use na data selecionada. Você também pode salvar suas próprias refeições como frequentes.</p></div></div><div class="row wrap spaced">${[
+    ["all", "Todas"],
+    ["shake", "Café e lanche"],
+    ["main", "Almoço e jantar"],
+  ]
+    .map(([key, name]) =>
+      btn(
+        name,
+        "option-group",
+        optionGroup === key ? "selected" : "mini",
+        `data-group="${key}"`,
+      ),
+    )
+    .join("")}</div><div class="grid cols spaced">${options
+    .map((o) => {
+      const labels = o.items.some(([key]) => LABEL_INGREDIENTS[key]);
+      const t = labels ? null : total(optionRows(state, o.id));
+      return `<section class="card meal-option"><span class="badge">${o.group === "shake" ? "CAFÉ DA MANHÃ OU LANCHE" : "ALMOÇO OU JANTAR"}</span><h3>${esc(o.name)}</h3><p class="form-help">${esc(o.note)}</p><small>${t ? `≈ ${fmt(t.kcal)} kcal · P ${fmt(t.protein, 1)} g · C ${fmt(t.carbs, 1)} g · G ${fmt(t.fat, 1)} g` : "Calcule com os rótulos do seu leite e whey."}</small><div class="spaced">${btn("Ver e escolher", "meal-option", "primary mini", `data-id="${o.id}"`)}</div></section>`;
+    })
+    .join(
+      "",
+    )}</div><p class="form-help spaced">Porções de exemplo editáveis. Referências TACO/NEPA–UNICAMP; marcas, preparo e temperos alteram os valores. O óleo listado inclui todo o preparo. As combinações não são equivalentes em nutrientes.</p>`;
+}
+function mealOptionPreview(id) {
+  const option = MEAL_OPTIONS.find((o) => o.id === id);
+  if (!option) throw Error("Opção não encontrada.");
+  const destination = state.meals.includes(optionMeal)
+    ? optionMeal
+    : option.group === "shake"
+      ? "Café da manhã"
+      : "Almoço";
+  modal(
+    esc(option.name),
+    `<input type="hidden" name="optionId" value="${option.id}"><div class="note">${esc(option.note)}</div><div class="form-grid spaced">${input("Data do cardápio", "date", selectedDate, "date", "required")}${select("Refeição que será substituída", "meal", state.meals, destination)}</div><p class="form-help spaced">A confirmação substitui apenas esta refeição na data escolhida. Outras datas e consumos são preservados.</p>${option.items
+      .map(([key, quantity]) => {
+        const label = LABEL_INGREDIENTS[key],
+          food = MENU_FOODS.find((f) => f.key === key);
+        const choices = label
+          ? state.foods.filter((f) => f.unit === label.unit)
+          : [];
+        const preferred = choices.find((f) =>
+          key === "whey" ? /whey/i.test(f.name) : /leite/i.test(f.name),
+        );
+        return `<section class="plan-preview"><h3>${esc(label?.name || food.name)}</h3><p class="form-help">${esc(ingredientNote(key))}</p>${label ? `${select("Alimento do seu rótulo", "label-" + key, [["", "Selecione o rótulo cadastrado"], ...choices.map((f) => [f.id, f.name])], preferred?.id || "")}<div class="spaced">${btn("Cadastrar rótulo de " + label.name, "option-label", "mini", `data-key="${key}" data-option="${id}"`)}</div>` : `<small>${esc(food.source)}</small>`}<div class="spaced">${decimal(`Quantidade (${label?.unit || food.unit})`, "portion-" + key, quantity, "required data-positive")}</div></section>`;
+      })
+      .join(
+        "",
+      )}<p class="form-help spaced">O whey usa 30 g de pó como referência inicial; ajuste para a porção do seu produto. Nenhuma marca é presumida. Nas opções com macarrão, pese a massa seca; a carne moída usa peso cru. Os demais estados estão indicados em cada ingrediente.</p><p class="form-help spaced">Confira ingredientes, rótulos e contato cruzado conforme suas alergias.${state.profile.allergies ? ` Anotações locais: ${esc(state.profile.allergies)}.` : ""}</p>`,
+    "choose-meal-option",
+    "Usar nesta data",
+  );
+  const form = $('form[data-form="choose-meal-option"]');
+  if (optionDraft?.optionId === id) {
+    for (const [key, value] of Object.entries(optionDraft)) {
+      if (form.elements[key]) form.elements[key].value = value;
+    }
+  }
+  form.insertAdjacentHTML(
+    "afterbegin",
+    '<div id="option-totals" class="note spaced" aria-live="polite"></div>',
+  );
+  updateOptionTotals();
+}
+function updateOptionTotals() {
+  const form = $('form[data-form="choose-meal-option"]');
+  if (!form) return;
+  try {
+    const data = readForm(form);
+    const option = MEAL_OPTIONS.find((o) => o.id === data.optionId);
+    const labels = Object.fromEntries(
+      Object.keys(LABEL_INGREDIENTS).map((k) => [k, data["label-" + k]]),
+    );
+    const portions = Object.fromEntries(
+      option.items.map(([k]) => [k, data["portion-" + k]]),
+    );
+    const t = total(optionRows(state, option.id, labels, portions));
+    $("#option-totals").textContent =
+      `Total desta opção: ≈ ${fmt(t.kcal)} kcal · P ${fmt(t.protein, 1)} g · C ${fmt(t.carbs, 1)} g · G ${fmt(t.fat, 1)} g.`;
+  } catch (e) {
+    $("#option-totals").textContent = e.message;
+  }
 }
 function budgetPreview() {
   const rows = budgetRows(),
@@ -453,7 +573,7 @@ function budgetPreview() {
   );
   modal(
     "Exemplo de plano econômico",
-    `<div class="note">Referência geral para você revisar e adaptar às suas necessidades. Os totais vêm da TACO (4ª edição, 2011) e variam com marca, preparo e quantidade. Este exemplo não calcula suas necessidades pessoais.</div>${state.plans.length && missing.length ? `<p class="note spaced">Você já tem ${state.plans.length} itens planejados. A confirmação adiciona o exemplo ao plano atual; revise os itens para montar o dia que pretende seguir.</p>` : ""}<div class="row wrap spaced"><span class="pill">≈ ${fmt(t.kcal)} kcal</span><span class="pill">P ${fmt(t.protein)} g</span><span class="pill">C ${fmt(t.carbs)} g</span><span class="pill">G ${fmt(t.fat)} g</span></div>${BUDGET_MEALS.map(
+    `<div class="note">Este exemplo é adicionado ao plano padrão; cardápios próprios de outras datas são preservados. Referência geral para você revisar e adaptar às suas necessidades. Os totais vêm da TACO (4ª edição, 2011) e variam com marca, preparo e quantidade. Este exemplo não calcula suas necessidades pessoais.</div>${state.plans.length && missing.length ? `<p class="note spaced">Você já tem ${state.plans.length} itens planejados. A confirmação adiciona o exemplo ao plano atual; revise os itens para montar o dia que pretende seguir.</p>` : ""}<div class="row wrap spaced"><span class="pill">≈ ${fmt(t.kcal)} kcal</span><span class="pill">P ${fmt(t.protein)} g</span><span class="pill">C ${fmt(t.carbs)} g</span><span class="pill">G ${fmt(t.fat)} g</span></div>${BUDGET_MEALS.map(
       (m) =>
         `<section class="plan-preview"><h3>${esc(m.name)}</h3><ol>${rows
           .filter((r) => r.modelMeal === m.key)
@@ -474,11 +594,11 @@ function budgetPreview() {
 function mealCard(meal, planned) {
   const rows = (
       planned
-        ? state.plans
+        ? currentPlans()
         : state.entries.filter((e) => e.date === selectedDate)
     ).filter((e) => e.meal === meal),
     t = total(rows);
-  return `<section class="card"><div class="card-head"><div><h2>${esc(meal)}</h2><small>${fmt(t.kcal)} kcal · P ${fmt(t.protein, 1)} g · C ${fmt(t.carbs, 1)} g · G ${fmt(t.fat, 1)} g</small></div>${btn(icon("plus", 18), planned ? "add-plan" : "add-entry", "icon", `data-meal="${esc(meal)}" aria-label="Adicionar em ${esc(meal)}"`)}</div>${rows.length ? rows.map((e) => `<div class="list-item"><div class="row between"><div><h3>${esc(e.name)}</h3><p>${fmt(e.quantity, 1)} ${esc(e.unit)} · ${fmt(total([e]).kcal)} kcal</p><small>${esc(e.source || "Cadastro manual")}${e.brand ? " · " + esc(e.brand) : ""}</small>${e.portionNote ? `<p class="form-help">${esc(e.portionNote)}</p>` : ""}</div><div class="row">${btn(icon("edit", 16), planned ? "edit-plan" : "edit-entry", "icon", `data-id="${e.id}" aria-label="Editar ${esc(e.name)}"`)}${btn(icon("trash", 16), planned ? "delete-plan" : "delete-entry", "icon danger", `data-id="${e.id}" aria-label="Remover ${esc(e.name)}"`)}</div></div>${planned ? `<div class="spaced">${btn("Registrar consumo", "consume-plan", "mini", `data-id="${e.id}"`)}</div>` : ""}</div>`).join("") : `<p class="form-help">${planned ? "Nada planejado. Adicione alimentos e quantidades." : "Nenhum alimento registrado nesta refeição."}</p>`}${rows.length ? `<div class="row wrap spaced">${!planned ? btn("Copiar para outra data", "copy-meal", "mini", `data-meal="${esc(meal)}"`) : ""}${btn("Salvar como frequente", planned ? "favorite-plan" : "favorite-meal", "mini", `data-meal="${esc(meal)}"`)}</div>` : ""}</section>`;
+  return `<section class="card"><div class="card-head"><div><h2>${esc(meal)}</h2><small>${fmt(t.kcal)} kcal · P ${fmt(t.protein, 1)} g · C ${fmt(t.carbs, 1)} g · G ${fmt(t.fat, 1)} g</small></div>${btn(icon("plus", 18), planned ? "add-plan" : "add-entry", "icon", `data-meal="${esc(meal)}" aria-label="Adicionar em ${esc(meal)}"`)}</div>${rows.length ? rows.map((e) => `<div class="list-item"><div class="row between"><div><h3>${esc(e.name)}</h3><p>${fmt(e.quantity, 1)} ${esc(e.unit)} · ${fmt(total([e]).kcal)} kcal</p><small>${esc(e.source || "Cadastro manual")}${e.brand ? " · " + esc(e.brand) : ""}</small>${e.portionNote ? `<p class="form-help">${esc(e.portionNote)}</p>` : ""}</div><div class="row">${btn(icon("edit", 16), planned ? "edit-plan" : "edit-entry", "icon", `data-id="${e.id}" aria-label="Editar ${esc(e.name)}"`)}${btn(icon("trash", 16), planned ? "delete-plan" : "delete-entry", "icon danger", `data-id="${e.id}" aria-label="Remover ${esc(e.name)}"`)}</div></div>${planned ? `<div class="spaced">${btn("Registrar consumo", "consume-plan", "mini", `data-id="${e.id}"`)}</div>` : ""}</div>`).join("") : `<p class="form-help">${planned ? "Nada planejado. Adicione alimentos e quantidades." : "Nenhum alimento registrado nesta refeição."}</p>`}${planned ? `<div class="spaced">${btn("Escolher outra opção", "menu-options", "mini", `data-meal="${esc(meal)}"`)}</div>` : ""}${rows.length ? `<div class="row wrap spaced">${!planned ? btn("Copiar para outra data", "copy-meal", "mini", `data-meal="${esc(meal)}"`) : ""}${btn("Salvar como frequente", planned ? "favorite-plan" : "favorite-meal", "mini", `data-meal="${esc(meal)}"`)}</div>` : ""}</section>`;
 }
 function foodLibrary() {
   return `<div class="row wrap spaced" style="margin-bottom:20px">${btn("+ Alimento do rótulo", "new-food", "primary")}${btn("+ Receita", "new-recipe", "ghost")}</div><div class="card">${state.foods.length ? state.foods.map((f) => `<div class="list-item row between"><div><h3>${esc(f.name)}</h3><p>${fmt(f.kcal)} kcal por ${fmt(f.reference, 1)} ${esc(f.unit)}</p><small>${esc(f.source)}${f.brand ? " · " + esc(f.brand) : ""}</small></div><div class="row">${btn(icon("edit", 16), "edit-food", "icon", `data-id="${f.id}" aria-label="Editar alimento"`)}${btn(icon("trash", 16), "delete-food", "icon danger", `data-id="${f.id}" aria-label="Excluir alimento"`)}</div></div>`).join("") : empty("Seu próprio catálogo", "Cadastre alimentos a partir do rótulo. Os valores são informados por você, sem buscas simuladas.", "new-food", "Cadastrar alimento", "food")}</div>`;
@@ -496,7 +616,7 @@ function entryEditor(mode, id, meal) {
   currentMeal = meal || state.meals[0];
   currentFood = id
     ? structuredClone(
-        (mode === "plan" ? state.plans : state.entries).find(
+        (mode === "plan" ? currentPlans() : state.entries).find(
           (e) => e.id === id,
         ),
       )
@@ -516,10 +636,10 @@ function foodReference(f) {
   return `<h3>${esc(f.name)}</h3><p class="form-help">Por ${fmt(f.reference, 1)} ${esc(f.unit)}: ${fmt(f.kcal)} kcal · P ${fmt(f.protein, 1)} g · C ${fmt(f.carbs, 1)} g · G ${fmt(f.fat, 1)} g</p><small>Origem: ${esc(f.source || "Cadastro manual")}</small>`;
 }
 let foodReturn = false;
-function foodEditor(id, back = false) {
+function foodEditor(id, back = false, preset = {}) {
   foodReturn = back;
   editId = id || null;
-  const f = id ? state.foods.find((f) => f.id === id) : {};
+  const f = id ? state.foods.find((f) => f.id === id) : preset;
   modal(
     id ? "Editar alimento" : "Cadastrar alimento",
     `<div class="form-grid">${input("Nome", "name", f.name || "", "text", 'required maxlength="120"')}${input("Marca (opcional)", "brand", f.brand || "")}${decimal("Quantidade de referência", "reference", f.reference || 100, "required data-positive")}${select("Unidade de referência", "unit", ["g", "ml", "porção"], f.unit || "g")}${nutrients.map((k, i) => decimal(["Calorias (kcal)", "Proteínas (g)", "Carboidratos (g)", "Gorduras (g)", "Fibras (g, opcional)", "Sódio (mg, opcional)"][i], k, f[k] ?? "", i < 4 ? "required" : "")).join("")}${input("Origem dos valores", "source", f.source || "Rótulo", "text", 'required placeholder="Ex.: rótulo da embalagem"')}</div><div class="note spaced">Informe os nutrientes para a quantidade de referência, não para o pacote inteiro. Alterações não mudam registros anteriores.</div>`,
@@ -858,6 +978,75 @@ function exportCSV() {
 }
 
 const actions = {
+  "menu-date": (b) => {
+    const date = new Date(selectedDate + "T12:00:00");
+    date.setDate(date.getDate() + num(b.dataset.offset));
+    selectedDate = day(date);
+    planScope = "day";
+    render();
+  },
+  "plan-scope": (b) => {
+    planScope = b.dataset.scope;
+    render();
+  },
+  "menu-options": (b) => {
+    optionMeal = b.dataset.meal || "";
+    optionGroup = /café|lanche|ceia/i.test(optionMeal)
+      ? "shake"
+      : optionMeal
+        ? "main"
+        : "all";
+    foodTab = "opcoes";
+    render();
+  },
+  "option-group": (b) => {
+    optionGroup = b.dataset.group;
+    optionMeal = "";
+    render();
+  },
+  "meal-option": (b) => {
+    optionReturn = null;
+    optionDraft = null;
+    mealOptionPreview(b.dataset.id);
+  },
+  "option-label": (b) => {
+    optionDraft = Object.fromEntries(
+      new FormData($('form[data-form="choose-meal-option"]')),
+    );
+    optionReturn = b.dataset.option;
+    optionLabelKey = b.dataset.key;
+    const label = LABEL_INGREDIENTS[b.dataset.key];
+    foodEditor(null, false, {
+      name: label.name,
+      reference: label.reference,
+      unit: label.unit,
+    });
+  },
+  "customize-plan-day": async () => {
+    ensurePlanDay(state, selectedDate);
+    await persist();
+    render();
+  },
+  "reset-plan-day": () =>
+    confirmAction(
+      "Voltar ao plano padrão?",
+      "O cardápio próprio desta data será removido. O consumo registrado será preservado.",
+      async () => {
+        state.planDays = (state.planDays || []).filter(
+          (p) => p.date !== selectedDate,
+        );
+        await persist();
+        close();
+        render();
+      },
+    ),
+  "copy-plan-day": () =>
+    modal(
+      "Copiar cardápio",
+      `${input("Data de destino", "date", "", "date", "required")}<p class="form-help spaced">Copia todas as refeições de ${dateLabel(selectedDate)} e substitui o cardápio da data de destino. O consumo registrado e o plano padrão são preservados.</p>`,
+      "copy-plan-day",
+      "Copiar e substituir",
+    ),
   "budget-preview": budgetPreview,
   "budget-close": close,
   "machine-pack": packPreview,
@@ -1216,13 +1405,18 @@ const actions = {
       "Remover planejamento?",
       "Os alimentos já consumidos serão preservados.",
       async () => {
-        state.plans = state.plans.filter((e) => e.id !== b.dataset.id);
+        const list = currentPlans();
+        const index = list.findIndex((e) => e.id === b.dataset.id);
+        if (index >= 0) list.splice(index, 1);
         await persist();
         close();
         render();
       },
     ),
-  "new-food": () => foodEditor(),
+  "new-food": () => {
+    optionReturn = null;
+    foodEditor();
+  },
   "edit-food": (b) => foodEditor(b.dataset.id),
   "entry-new-food": () => {
     const f = $('form[data-form="entry"]');
@@ -1241,7 +1435,7 @@ const actions = {
       },
     ),
   "consume-plan": (b) => {
-    const p = state.plans.find((p) => p.id === b.dataset.id);
+    const p = currentPlans().find((p) => p.id === b.dataset.id);
     foodMode = "entry";
     editId = null;
     entryEditId = null;
@@ -1449,10 +1643,38 @@ function getExercise(d) {
   };
 }
 const forms = {
+  "choose-meal-option": async (d) => {
+    const labels = Object.fromEntries(
+      Object.keys(LABEL_INGREDIENTS).map((k) => [k, d["label-" + k]]),
+    );
+    const option = MEAL_OPTIONS.find((o) => o.id === d.optionId);
+    if (!option) throw Error("Opção não encontrada.");
+    const portions = Object.fromEntries(
+      option.items.map(([k]) => [k, d["portion-" + k]]),
+    );
+    chooseMealOption(state, d.date, d.meal, d.optionId, labels, portions);
+    selectedDate = d.date;
+    planScope = "day";
+    foodTab = "plano";
+    await persist();
+    close();
+    render();
+    toast("Refeição escolhida para esta data. Nenhum consumo registrado.");
+  },
+  "copy-plan-day": async (d) => {
+    copyDayPlan(state, selectedDate, d.date);
+    selectedDate = d.date;
+    planScope = "day";
+    await persist();
+    close();
+    render();
+    toast("Cardápio copiado para a data escolhida.");
+  },
   "budget-plan": async (d, f) => {
     const map = Object.fromEntries(
       BUDGET_MEALS.map((m) => [m.key, d["budget-" + m.key]]),
     );
+    planScope = "default";
     const added = addBudgetPlan(state, map, {
       useGoals: f.elements.useBudgetGoals.checked,
     });
@@ -1555,6 +1777,13 @@ const forms = {
       };
       editId = null;
       showEntry();
+    } else if (optionReturn) {
+      const option = optionReturn;
+      optionReturn = null;
+      if (optionLabelKey && optionDraft)
+        optionDraft["label-" + optionLabelKey] = f.id;
+      optionLabelKey = null;
+      mealOptionPreview(option);
     } else {
       close();
       render();
@@ -1563,7 +1792,7 @@ const forms = {
   },
   entry: async (d) => {
     if (!currentFood) throw Error("Escolha ou cadastre um alimento.");
-    const list = foodMode === "plan" ? state.plans : state.entries;
+    const list = foodMode === "plan" ? currentPlans() : state.entries;
     const id = entryEditId || uid();
     const e = {
       ...structuredClone(currentFood),
@@ -1611,7 +1840,7 @@ const forms = {
   favorite: async (d) => {
     const rows = (
       foodMode === "plan"
-        ? state.plans
+        ? currentPlans()
         : state.entries.filter((e) => e.date === selectedDate)
     ).filter((e) => e.meal === currentMeal);
     state.favorites.push({
@@ -1625,7 +1854,7 @@ const forms = {
   },
   "use-favorite": async (d) => {
     const f = state.favorites.find((f) => f.id === editId);
-    const list = d.target === "plan" ? state.plans : state.entries;
+    const list = d.target === "plan" ? currentPlans() : state.entries;
     list.push(
       ...f.items.map((e) => ({
         ...structuredClone(e),
@@ -1656,6 +1885,7 @@ const forms = {
     const used = [
       ...state.entries,
       ...state.plans,
+      ...(state.planDays || []).flatMap((p) => p.items),
       ...state.favorites.flatMap((f) => f.items),
     ];
     if (changedList && used.some((e) => !wanted.includes(e.meal)))
@@ -1812,6 +2042,7 @@ document.addEventListener("submit", async (event) => {
 });
 document.addEventListener("input", (event) => {
   const el = event.target;
+  if (el.closest('form[data-form="choose-meal-option"]')) updateOptionTotals();
   if (el.dataset.setInput) {
     const s =
       state.active.exercises[+el.dataset.exercise].sets[+el.dataset.set];
@@ -1832,6 +2063,7 @@ document.addEventListener("input", (event) => {
 });
 document.addEventListener("change", async (event) => {
   const el = event.target;
+  if (el.closest('form[data-form="choose-meal-option"]')) updateOptionTotals();
   if (el.id === "chooser-machines") {
     chooserMachines = el.checked;
     showExerciseChooser(chooserContext, chooserIndex, true);
@@ -1845,6 +2077,7 @@ document.addEventListener("change", async (event) => {
   if (el.id === "date") {
     if (el.value) {
       selectedDate = el.value;
+      planScope = "day";
       render();
     }
   }

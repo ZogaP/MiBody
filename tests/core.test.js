@@ -27,6 +27,12 @@ import {
   addBudgetPlan,
   BUDGET_MEALS,
 } from "../src/budget.js";
+import {
+  chooseMealOption,
+  plannedRows,
+  copyDayPlan,
+  optionRows,
+} from "../src/menus.js";
 test("números brasileiros e nutrição proporcional sem conversão de unidade", () => {
   assert.equal(num("12,5"), 12.5);
   const result = total([
@@ -215,4 +221,98 @@ test("modelo alimentar usa nutrientes proporcionais e não registra consumo nem 
   const before = structuredClone(s);
   assert.throws(() => addBudgetPlan(s, { breakfast: "Refeição inexistente" }));
   assert.deepEqual(s, before);
+});
+test("cardápios variam por data sem alterar padrão, outros dias, consumo ou metas", () => {
+  const s = initial();
+  addBudgetPlan(
+    s,
+    Object.fromEntries(BUDGET_MEALS.map((m) => [m.key, m.name])),
+  );
+  const defaults = structuredClone(s.plans),
+    goals = structuredClone(s.profile);
+  const lunch = "Almoço",
+    date = "2026-10-21",
+    other = "2026-10-22";
+  chooseMealOption(s, date, lunch, "chicken-carrot");
+  assert.equal(plannedRows(s, date).filter((r) => r.meal === lunch).length, 5);
+  assert.deepEqual(
+    plannedRows(s, date).filter((r) => r.meal !== lunch),
+    defaults.filter((r) => r.meal !== lunch),
+  );
+  const firstDay = structuredClone(plannedRows(s, date));
+  chooseMealOption(s, other, lunch, "pasta-beef");
+  assert.deepEqual(plannedRows(s, date), firstDay);
+  assert.deepEqual(s.plans, defaults);
+  assert.deepEqual(s.profile, goals);
+  assert.equal(s.entries.length, 0);
+  chooseMealOption(s, date, lunch, "chicken-carrot");
+  assert.equal(plannedRows(s, date).filter((r) => r.meal === lunch).length, 5);
+  copyDayPlan(s, date, other);
+  assert.deepEqual(total(plannedRows(s, date)), total(plannedRows(s, other)));
+  plannedRows(s, other)[0].quantity = 17;
+  assert.notEqual(plannedRows(s, date)[0].quantity, 17);
+  assert.doesNotThrow(() => validateBackup(structuredClone(s)));
+  const legacy = structuredClone(s);
+  delete legacy.planDays;
+  assert.doesNotThrow(() => validateBackup(legacy));
+  for (const bad of [
+    null,
+    {},
+    [{ id: "x", date, items: [{ id: "bad" }] }],
+    [s.planDays[0], s.planDays[0]],
+  ]) {
+    assert.throws(() => validateBackup({ ...s, planDays: bad }));
+  }
+  const before = structuredClone(s);
+  assert.throws(() => chooseMealOption(s, date, lunch, "shake-strawberry"));
+  assert.throws(() => chooseMealOption(s, "2026-02-30", lunch, "chicken-beet"));
+  assert.deepEqual(s, before);
+});
+test("vitaminas exigem rótulos, respeitam g e ml e mantêm nutrientes salvos", () => {
+  const s = initial();
+  const base = {
+    reference: 100,
+    kcal: 60,
+    protein: 3,
+    carbs: 5,
+    fat: 3,
+    fiber: 0,
+    sodium: 40,
+    source: "Rótulo de teste",
+  };
+  s.foods = [
+    { ...base, id: "milk", name: "Leite de teste", unit: "ml" },
+    {
+      ...base,
+      id: "whey",
+      name: "Whey de teste",
+      unit: "g",
+      reference: 30,
+      kcal: 120,
+      protein: 24,
+      carbs: 3,
+      fat: 1,
+      sodium: 50,
+    },
+  ];
+  const labels = { milk: "milk", whey: "whey" };
+  const t = total(optionRows(s, "shake-strawberry", labels));
+  assert.equal(t.kcal, 315);
+  assert.equal(t.protein, 32.85);
+  assert.equal(
+    total(optionRows(s, "shake-strawberry", labels, { whey: 60 })).protein,
+    56.85,
+  );
+  assert.throws(() =>
+    optionRows(s, "shake-strawberry", { milk: "whey", whey: "whey" }),
+  );
+  chooseMealOption(
+    s,
+    "2026-10-21",
+    "Café da manhã",
+    "shake-strawberry",
+    labels,
+  );
+  s.foods[1].protein = 1;
+  assert.equal(total(plannedRows(s, "2026-10-21")).protein, 32.85);
 });

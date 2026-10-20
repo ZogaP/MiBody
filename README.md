@@ -77,6 +77,14 @@ Em **Alimentação → Meu plano alimentar → Ver exemplo econômico**, revise 
 
 A importação adiciona itens ao planejamento, preservando consumos anteriores e as metas atuais. O usuário pode optar expressamente por usar metas arredondadas a partir dos totais do exemplo. Não há cálculo automático de necessidades pessoais. Repetir a importação não duplica os itens. As anotações de alergias e restrições no Perfil ficam localmente no IndexedDB e entram no backup; o app não certifica ingredientes como seguros para alergias.
 
+### Variar o cardápio por data
+
+Em **Alimentação → Opções de cardápio**, há dez combinações: duas vitaminas para café da manhã/lanche e oito refeições principais com arroz, feijão, frango grelhado, ovos, macarrão com molho de tomate, batata e batata-doce. Use os filtros, abra **Ver e escolher**, ajuste as quantidades e escolha a data e a refeição. O total nutricional acompanha as alterações. As opções têm totais diferentes; não representam trocas nutricionalmente equivalentes.
+
+A escolha substitui somente a refeição da data indicada e mantém as outras refeições do plano vigente. O **Plano padrão** continua sendo usado nas datas sem cardápio próprio; os cardápios personalizados têm cópias independentes e não mudam quando o padrão é editado. Em **Meu plano alimentar**, navegue entre os dias, copie um cardápio para outra data ou volte ao padrão com confirmação. O consumo do diário continua separado. Itens das refeições e seus nutrientes ficam salvos no aparelho e entram no backup; backups antigos da versão 1 continuam aceitos.
+
+As vitaminas usam os rótulos de leite em **ml** e whey em **g**, cadastrados pelo usuário na própria tela da opção e reutilizados nas próximas escolhas. Não há nutrientes de marcas presumidos nem conversão de g para ml. Os 30 g de whey são uma quantidade inicial de pó, ajustável conforme o produto. Para macarrão e patinho, as referências usam **massa seca e carne crua**, com indicação em cada ingrediente; os outros alimentos seguem o estado descrito. A [documentação dos alimentos](docs/alimentacao-economica.md) detalha a procedência.
+
 ## Dados e recuperação
 
 Cada alteração de registros é gravada automaticamente no IndexedDB. Em caso de falha, uma faixa de erro permanece visível. Exporte um backup antes de sair caso isso aconteça. Não há sincronização entre celulares, entre navegadores ou entre o navegador e uma instalação que use outro espaço de armazenamento.
@@ -95,6 +103,7 @@ npm run test:e2e
 npm run test:portable
 npm run test:machines
 npm run test:budget
+npm run test:menus
 ```
 
 O teste de navegador usa Chromium instalado em `/usr/bin/chromium`; outro caminho pode ser passado em `CHROMIUM_PATH`. Os testes usam um perfil temporário e não alteram seus dados pessoais. Capturas são geradas em `test-results/`, que não é versionado.
@@ -116,6 +125,7 @@ A versão autocontida foi testada em HTTP sem requisitar dependências externas,
 - `src/core.js`: cálculos, criação de sessões, datas, CSV e validação de backup.
 - `src/machines.js`: catálogo de máquinas, divisão PPL + Upper + Lower e importação sem duplicidade.
 - `src/budget.js` e `src/budget-foods.json`: exemplo econômico e valores nutricionais com procedência, separados do diário consumido.
+- `src/menus.js` e `src/menu-foods.json`: opções de refeições, referências adicionais TACO e cardápios independentes por data.
 - `src/db.js`: transações IndexedDB.
 - `src/app.js`: telas, formulários, navegação e interações.
 - `src/style.css`: temas, layout responsivo e acessibilidade visual.

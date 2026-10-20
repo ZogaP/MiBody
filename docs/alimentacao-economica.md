@@ -32,3 +32,27 @@ IDs TACO incluídos: **3, 7, 53, 149, 157, 182, 272, 408, 488 e 561**. As coluna
 Revisão consultada da transcrição: [`06e466ad2f3d76064b587808b1804564b2c40f67`](https://github.com/raulfdm/taco-api/tree/06e466ad2f3d76064b587808b1804564b2c40f67/references).
 
 O sódio do sal e de outros temperos adicionados **não está incluído**. Não há conversão entre gramas, mililitros e unidades; os alimentos do exemplo usam somente referência em gramas.
+
+## Opções para variar os dias
+
+A aba **Opções de cardápio** acrescenta oito refeições principais e duas vitaminas, todas com quantidades editáveis. Arroz e feijão podem acompanhar frango grelhado com cenoura, beterraba, molho de tomate, batata ou batata-doce, ou ovos cozidos. As opções de macarrão usam carne moída de patinho ou frango grelhado com molho de tomate. As vitaminas combinam leite, whey e morango, com uma variante que acrescenta aveia.
+
+Cada combinação tem seu próprio total; elas não são nutricionalmente equivalentes. O aplicativo não impõe metas, frequência de refeições ou rotação automática. A escolha de uma opção substitui apenas a refeição indicada no cardápio daquela data. O plano padrão e os dias já personalizados permanecem independentes. Copiar para outra data substitui o cardápio de destino, conforme o texto da confirmação; nenhum desses fluxos registra consumo.
+
+Os nove alimentos adicionais foram extraídos da mesma revisão TACO citada acima, por 100 g:
+
+| ID TACO | Referência | Estado de pesagem |
+| --- | --- | --- |
+| 40 | Macarrão de trigo | Seco, antes de cozinhar |
+| 88 | Batata-doce | Cozida |
+| 91 | Batata inglesa | Cozida |
+| 97 | Beterraba | Cozida |
+| 109 | Cenoura | Cozida |
+| 159 | Molho de tomate industrializado | Pronto, média de composição |
+| 239 | Morango | Cru, sem folhas |
+| 376 | Patinho bovino sem gordura | Cru, antes de moer/cozinhar; referência para carne moída |
+| 410 | Peito de frango sem pele | Grelhado |
+
+Não se usa o peso de macarrão pronto com a composição da massa seca, nem o peso da carne pronta com a referência crua. O cozimento muda o peso conforme a água perdida/absorvida; não há conversão automática. O óleo listado representa o total de todas as preparações da refeição. A composição do molho comprado e da carne moída pode diferir da referência, especialmente em sódio e gordura.
+
+**Leite e whey exigem cadastro do rótulo**, pois não há produto específico conhecido nem composição suposta de uma marca. O leite deve usar referência em ml, e o whey em g de pó. A quantidade inicial de 30 g de pó pode ser ajustada à porção do produto; não significa 30 g de proteína e não equivale necessariamente a um dosador. Os valores informados são salvos somente no catálogo local e reutilizados nas vitaminas. Fibras e sódio são campos opcionais do cadastro; quando omitidos, entram como zero na estimativa. Nenhum desses dados pessoais de cadastro integra o código público.
