@@ -1,0 +1,3 @@
+# The generated portable bundle includes third-party multiline string literals.
+# Preserve their whitespace; source files retain normal whitespace checks.
+MiBody.html whitespace=-blank-at-eol

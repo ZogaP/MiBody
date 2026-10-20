@@ -12,7 +12,13 @@ import {
   day,
   goalText,
   csv,
+  gymDates,
+  gymDaysInMonth,
 } from "../src/core.js";
+import {
+  applyPersonalSetup,
+  parsePersonalSetup,
+} from "../src/personal-setup.js";
 import {
   MACHINE_CATALOG,
   addMachinePack,
@@ -315,4 +321,54 @@ test("vitaminas exigem rótulos, respeitam g e ml e mantêm nutrientes salvos", 
   );
   s.foods[1].protein = 1;
   assert.equal(total(plannedRows(s, "2026-10-21")).protein, 32.85);
+});
+test("presenças contam datas únicas, incluindo treinos e registros manuais, separadas por mês", () => {
+  const s = initial();
+  s.sessions = [
+    { date: "2026-09-10" },
+    { date: "2026-09-10" },
+    { date: "2026-09-11" },
+    { date: "2026-10-01" },
+  ];
+  s.checkins = [
+    { id: "a", date: "2026-09-10" },
+    { id: "b", date: "2026-09-12" },
+  ];
+  assert.equal(gymDates(s).length, 4);
+  assert.equal(gymDaysInMonth(s, "2026-09-30"), 3);
+  assert.equal(gymDaysInMonth(s, "2026-10-30"), 1);
+  assert.equal(gymDaysInMonth(s, "2026-11-01"), 0);
+  delete s.checkins;
+  assert.equal(gymDaysInMonth(s, "2026-09-30"), 2);
+});
+test("configuração privada valida campos, preserva histórico e mantém vitaminas sem nutrientes inventados", () => {
+  const s = initial();
+  s.water.push({ id: "w", date: day(), ml: 250 });
+  const config = {
+    name: "Perfil de teste",
+    age: 32,
+    height: 169,
+    weight: 68,
+    sex: "feminino",
+    allergies: "Exemplo",
+  };
+  const next = applyPersonalSetup(s, config);
+  assert.deepEqual(next.water, s.water);
+  assert.equal(s.profile.name, "");
+  assert.equal(next.profile.name, config.name);
+  assert.equal(next.profile.hydrationMode, "liquids");
+  assert.equal(next.plans.length, 10);
+  assert.equal(next.mealGuides.length, 2);
+  assert.equal(
+    next.foods.some((f) => /whey|leite/i.test(f.name)),
+    false,
+  );
+  assert.equal(applyPersonalSetup(next, config).templates.length, 5);
+  assert.equal(next.entries.length, 0);
+  assert.doesNotThrow(() => validateBackup(next));
+  assert.throws(() => parsePersonalSetup('{"name":"a","weight":-1}'));
+  assert.throws(() => parsePersonalSetup("not JSON"));
+  const legacy = initial();
+  delete legacy.checkins;
+  assert.doesNotThrow(() => validateBackup(legacy));
 });

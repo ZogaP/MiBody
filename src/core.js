@@ -43,6 +43,15 @@ export const goalText = (value, goal, unit = "") =>
     : value > goal
       ? `${Math.round((value - goal) * 10) / 10} ${unit} acima da meta`
       : `${Math.round((goal - value) * 10) / 10} ${unit} para a meta`;
+export const gymDates = (state) =>
+  [
+    ...new Set([
+      ...state.sessions.map((s) => s.date),
+      ...(state.checkins || []).map((s) => s.date),
+    ]),
+  ].sort();
+export const gymDaysInMonth = (state, date) =>
+  gymDates(state).filter((d) => d.startsWith(date.slice(0, 7))).length;
 export function initial() {
   return {
     version: VERSION,
@@ -67,6 +76,7 @@ export function initial() {
     onboarded: false,
     templates: [],
     sessions: [],
+    checkins: [],
     active: null,
     foods: [],
     entries: [],
@@ -212,6 +222,44 @@ export function validateBackup(data) {
         ),
     );
   const p = data.profile;
+  for (const field of ["age", "trainingWater"])
+    if (p[field] !== undefined && !optionalNumber(p[field]))
+      throw Error("Dados adicionais do perfil inválidos.");
+  for (const field of ["sex", "activity", "foodPreferences", "wheyNote"])
+    if (
+      p[field] !== undefined &&
+      (typeof p[field] !== "string" || p[field].length > 3000)
+    )
+      throw Error("Preferências do perfil inválidas.");
+  if (
+    p.hydrationMode !== undefined &&
+    !["water", "liquids"].includes(p.hydrationMode)
+  )
+    throw Error("Tipo de meta de hidratação inválido.");
+  if (
+    data.checkins !== undefined &&
+    (!Array.isArray(data.checkins) ||
+      data.checkins.length > 100000 ||
+      !data.checkins.every((r) => id(r) && date(r)) ||
+      new Set(data.checkins.map((r) => r.id)).size !== data.checkins.length ||
+      new Set(data.checkins.map((r) => r.date)).size !== data.checkins.length)
+  )
+    throw Error("Presenças inválidas.");
+  if (
+    data.mealGuides !== undefined &&
+    (!Array.isArray(data.mealGuides) ||
+      data.mealGuides.length > 100 ||
+      !data.mealGuides.every(
+        (g) =>
+          g &&
+          typeof g.meal === "string" &&
+          data.meals.includes(g.meal) &&
+          typeof g.text === "string" &&
+          g.text.length <= 5000 &&
+          typeof g.option === "string",
+      ))
+  )
+    throw Error("Orientações das refeições inválidas.");
   if (
     p.allergies !== undefined &&
     (typeof p.allergies !== "string" || p.allergies.length > 2000)
@@ -269,7 +317,12 @@ export function validateBackup(data) {
   )
     throw Error("Alimentos ou quantidades inválidos.");
   if (
-    !data.water.every((r) => date(r) && finite(r.ml)) ||
+    !data.water.every(
+      (r) =>
+        date(r) &&
+        finite(r.ml) &&
+        (r.drink === undefined || ["water", "milk", "other"].includes(r.drink)),
+    ) ||
     !data.body.every(
       (r) =>
         date(r) &&

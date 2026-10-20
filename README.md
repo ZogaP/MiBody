@@ -1,6 +1,6 @@
 # MiBody
 
-PWA pessoal em português do Brasil para treinos, alimentação e evolução corporal. Sem conta, backend, anúncios ou rastreadores. Os dados e fotos ficam no IndexedDB deste navegador.
+PWA pessoal em português do Brasil para treinos, alimentação e evolução corporal. Com modo local e contas opcionais por e-mail e senha via Supabase. Os dados ficam no IndexedDB e, quando conectado, também são sincronizados com a conta. Sem anúncios ou rastreadores.
 
 Identidade visual em roxo, preto e branco, com temas escuro e claro.
 
@@ -85,9 +85,19 @@ A escolha substitui somente a refeição da data indicada e mantém as outras re
 
 As vitaminas usam os rótulos de leite em **ml** e whey em **g**, cadastrados pelo usuário na própria tela da opção e reutilizados nas próximas escolhas. Não há nutrientes de marcas presumidos nem conversão de g para ml. Os 30 g de whey são uma quantidade inicial de pó, ajustável conforme o produto. Para macarrão e patinho, as referências usam **massa seca e carne crua**, com indicação em cada ingrediente; os outros alimentos seguem o estado descrito. A [documentação dos alimentos](docs/alimentacao-economica.md) detalha a procedência.
 
+## Contas, perfil privado e dias na academia
+
+Use **Conta e sincronização** no topo ou no Perfil para criar conta, entrar, recuperar senha e acompanhar a sincronização. A chave pública e a URL do projeto estão configuradas; ainda é necessário executar `supabase/schema.sql` e configurar os retornos de autenticação no projeto. O [guia de ativação](docs/contas-e-sincronizacao.md) explica os passos e distingue testes locais da verificação real.
+
+Cada conta tem seu histórico, plano, alimentos e fotos separados. Alterações offline aguardam envio; conflitos entre aparelhos exigem escolher uma versão, com backup antes de carregar a nuvem. O modo local anterior é preservado e só é transferido para a conta por confirmação explícita.
+
+Em **Perfil → Importar minha configuração**, cole seu JSON privado para aplicar o perfil, o plano combinado, referências ajustáveis de hidratação e fichas com máquinas. Vitaminas aguardam os rótulos do leite e do whey; os totais ficam identificados como parciais. Nenhum perfil pessoal vem embutido no código público.
+
+**Hoje** e **Treinos → Histórico** mostram **dias distintos na academia no mês selecionado**, incluindo treinos concluídos e a marcação manual “Fui à academia”. Dois treinos no mesmo dia contam uma presença.
+
 ## Dados e recuperação
 
-Cada alteração de registros é gravada automaticamente no IndexedDB. Em caso de falha, uma faixa de erro permanece visível. Exporte um backup antes de sair caso isso aconteça. Não há sincronização entre celulares, entre navegadores ou entre o navegador e uma instalação que use outro espaço de armazenamento.
+Cada alteração é gravada no IndexedDB do perfil aberto. Contas conectadas sincronizam com Supabase; o modo local permanece separado. Uma faixa de erro indica falha de gravação local. Confira o status de sincronização antes de usar outro aparelho e faça backups.
 
 **Perfil → Backup completo (JSON)** exporta registros, fichas, alimentos, receitas, configurações, sessão em andamento e fotos. Guarde esse arquivo de forma privada: ele contém seus dados em texto e imagens, sem criptografia. **Restaurar backup** verifica a versão e a estrutura e pede confirmação antes de substituir os dados atuais. A versão aceita é `1`. O CSV inclui alimentos consumidos, séries, água e medidas; ele não substitui o backup completo.
 
@@ -104,6 +114,9 @@ npm run test:portable
 npm run test:machines
 npm run test:budget
 npm run test:menus
+npm run test:profile
+npm run test:cloud
+npm run test:cloud:sql
 ```
 
 O teste de navegador usa Chromium instalado em `/usr/bin/chromium`; outro caminho pode ser passado em `CHROMIUM_PATH`. Os testes usam um perfil temporário e não alteram seus dados pessoais. Capturas são geradas em `test-results/`, que não é versionado.
@@ -114,11 +127,11 @@ A versão autocontida foi testada em HTTP sem requisitar dependências externas,
 
 ## Limites explícitos
 
-- Não há sincronização, login, base nutricional externa, leitor de código de barras, reconhecimento de foto ou prescrição de dieta/treinos.
+- Contas e sincronização exigem projeto Supabase configurado, SQL aplicado e site HTTPS com URLs de retorno. O modo local não sincroniza. Não há base nutricional externa, leitor de código de barras, reconhecimento de foto ou prescrição de dieta/treinos.
 - Descanso tenta emitir som/vibração apenas com o app aberto e suporte do navegador. Não há push, execução garantida em segundo plano nem alertas com o app fechado. Ao voltar ao app, o horário é recalculado.
 - As séries registram repetições inteiras e carga em kg; exercícios cronometrados podem usar observações, mas não têm um campo próprio de duração da série.
 - O app foi validado em Chromium. Compatibilidade de instalação e comportamentos específicos do Safari precisam de teste em dispositivo real.
-- Hospedagem HTTPS e publicação não foram feitas pelo projeto.
+- A disponibilidade da hospedagem HTTPS e o estado do projeto Supabase precisam ser verificados na implantação; arquivos preparados não comprovam publicação ou login ativo.
 
 ## Organização
 
@@ -126,7 +139,9 @@ A versão autocontida foi testada em HTTP sem requisitar dependências externas,
 - `src/machines.js`: catálogo de máquinas, divisão PPL + Upper + Lower e importação sem duplicidade.
 - `src/budget.js` e `src/budget-foods.json`: exemplo econômico e valores nutricionais com procedência, separados do diário consumido.
 - `src/menus.js` e `src/menu-foods.json`: opções de refeições, referências adicionais TACO e cardápios independentes por data.
-- `src/db.js`: transações IndexedDB.
+- `src/db.js`: transações IndexedDB e cópias separadas por conta.
+- `src/cloud.js`: Supabase Auth, cache offline, revisões e conflitos; `supabase/schema.sql`: tabela, RLS e função autenticada.
+- `src/personal-setup.js`: importação privada e validada do perfil e plano.
 - `src/app.js`: telas, formulários, navegação e interações.
 - `src/style.css`: temas, layout responsivo e acessibilidade visual.
 - `vite.config.js`: build e geração do service worker com cache dos arquivos da versão.

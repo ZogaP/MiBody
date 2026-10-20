@@ -33,6 +33,9 @@ async function stored() {
       }),
   );
 }
+await page.addInitScript(() =>
+  localStorage.setItem("mibody-local-mode", "true"),
+);
 try {
   await page.goto(process.env.APP_URL || "http://localhost:4173");
   await action("onboard-skip").click();

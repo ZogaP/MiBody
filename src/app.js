@@ -14,8 +14,33 @@ import {
   validateBackup,
   csv,
   nutrients,
+  gymDates,
+  gymDaysInMonth,
 } from "./core.js";
-import { openDB, saveDB } from "./db.js";
+import {
+  openDB,
+  saveDB,
+  storageContext,
+  setStorageAccount,
+  readCloudCache,
+  loadGuestState,
+} from "./db.js";
+import {
+  cloudConfig,
+  saveCloudConfig,
+  cloudInfo,
+  initializeCloud,
+  signIn,
+  signUp,
+  signOut,
+  resetPassword,
+  changePassword,
+  loadAccount,
+  synchronize,
+  resolveConflict,
+  accountPending,
+} from "./cloud.js";
+import { parsePersonalSetup, applyPersonalSetup } from "./personal-setup.js";
 import {
   BUDGET_MEALS,
   budgetRows,
@@ -113,6 +138,8 @@ const days = ["Dom", "Seg", "Ter", "Qua", "Qui", "Sex", "Sáb"];
 const weekdays = (selected) =>
   `<fieldset class="full"><legend>Dias da semana</legend><div class="row wrap">${[1, 2, 3, 4, 5, 6, 0].map((d) => `<label class="check"><input type="checkbox" name="days" value="${d}" ${selected?.includes(d) ? "checked" : ""}>${days[d]}</label>`).join("")}</div></fieldset>`;
 let state,
+  accountAccess = true,
+  profileEditing = false,
   page = "home",
   tab = "fichas",
   selectedDate = day(),
@@ -135,10 +162,13 @@ let state,
 let writing = Promise.resolve();
 async function persist() {
   const snapshot = structuredClone(state);
-  writing = writing.catch(() => {}).then(() => saveDB(snapshot));
+  const context = storageContext();
+  writing = writing.catch(() => {}).then(() => saveDB(snapshot, context));
   try {
     await writing;
     $("#storage-error").hidden = true;
+    if (context.accountId && context.accountId === storageContext().accountId)
+      setTimeout(() => synchronize(), 0);
     return true;
   } catch (e) {
     const el = $("#storage-error");
@@ -183,14 +213,112 @@ function totals(date = selectedDate) {
 }
 function waterTotal(date = selectedDate) {
   return state.water
-    .filter((e) => e.date === date)
+    .filter(
+      (e) =>
+        e.date === date &&
+        (state.profile.hydrationMode === "liquids" ||
+          !e.drink ||
+          e.drink === "water"),
+    )
     .reduce((a, e) => a + e.ml, 0);
+}
+function hydrationLabel() {
+  return state.profile.hydrationMode === "liquids" ? "Líquidos" : "Água";
+}
+function attendanceCard() {
+  const checked = (state.checkins || []).some((c) => c.date === selectedDate);
+  const finished = state.sessions.some((s) => s.date === selectedDate);
+  return `<section class="card spaced"><div class="card-head wrap"><div><h2>Sua presença na academia</h2><p class="form-help">${dateLabel(selectedDate)} · ${finished || checked ? "Presença registrada" : "Sem presença registrada"}</p></div><span class="pill">${gymDaysInMonth(state, selectedDate)} dias no mês</span></div><p class="form-help">Cada data conta uma vez, mesmo com mais de um treino. Treinos concluídos registram presença automaticamente.</p><div class="spaced">${checked ? btn("Remover presença manual", "gym-checkin", "mini") : !finished ? btn("Fui à academia nesta data", "gym-checkin", "primary mini", selectedDate > day() ? "disabled" : "") : ""}</div></section>`;
 }
 function greeting() {
   const h = new Date().getHours();
   return h < 12 ? "Bom dia" : h < 18 ? "Boa tarde" : "Boa noite";
 }
+function cloudBanner() {
+  const info = cloudInfo();
+  return info.user &&
+    (info.conflict || /Não sincronizado|Sem conexão/.test(info.status))
+    ? `<div class="note spaced" role="status">${esc(info.status)} <div class="spaced">${btn("Ver conta e sincronização", "go-account", "mini")}</div></div>`
+    : "";
+}
+function cloudStatusChanged() {
+  const info = cloudInfo(),
+    el = $("#online-status");
+  if (el && info.user) el.textContent = info.status;
+  const banner = $("#cloud-banner");
+  if (banner) banner.innerHTML = cloudBanner();
+  if (page === "account" && state) render();
+}
+async function startCloud() {
+  await initializeCloud({
+    account: accountChanged,
+    status: cloudStatusChanged,
+    recovery: () => actions["new-password"](),
+    remote: async () => {
+      try {
+        await writing;
+        const id = cloudInfo().user?.id;
+        if (!id || storageContext().accountId !== id) return;
+        const local = await readCloudCache(id);
+        if (local?.dirty) return;
+        state = validateBackup(local.state);
+        if (!$("#modal").open && !(page === "user" && profileEditing)) render();
+      } catch {
+        toast(
+          "Não foi possível carregar a atualização da conta. Dados locais preservados.",
+        );
+      }
+    },
+  });
+}
+async function accountChanged(user) {
+  try {
+    await writing;
+  } catch {
+    toast("Houve uma falha de gravação antes da troca de conta.");
+  }
+  state = null;
+  close();
+  currentFood = null;
+  profileEditing = false;
+  draft = null;
+  bodyPhoto = "";
+  recipeItems = [];
+  render();
+  setStorageAccount(user?.id);
+  const next = user ? await loadAccount(user.id) : initial();
+  if ((cloudInfo().user?.id || null) !== (user?.id || null) || !next) return;
+  state = next;
+  accountAccess = !!user;
+  localStorage.removeItem("mibody-local-mode");
+  page = user ? "home" : "account";
+  selectedDate = day();
+  foodTab = "diario";
+  planScope = "day";
+  tab = "fichas";
+  render();
+  if (user) synchronize();
+}
+function accountView() {
+  const info = cloudInfo();
+  if (!info.configured)
+    return `${header("Sua conta", "E-mail e senha para acessar seus dados em outros aparelhos.")}<section class="card"><h2>Conexão com Supabase pendente</h2><p class="form-help spaced">O login precisa de um projeto Supabase configurado. O modo local continua funcionando. O responsável pelo app deve executar o SQL de configuração e conectar a URL e a chave pública do projeto.</p><div class="row wrap spaced">${btn("Conectar projeto Supabase", "cloud-config", "primary")}${btn("Continuar no modo local", "go-home", "ghost")}</div></section>`;
+  if (info.user)
+    return `${header("Sua conta", "Cada pessoa acessa os próprios registros.")}<section class="card"><h2>${esc(info.user.email)}</h2><p class="form-help spaced" role="status">${esc(info.status)}</p><div class="row wrap spaced">${btn("Sincronizar agora", "cloud-sync", "primary")}${btn("Trazer dados do modo local", "import-local-account", "ghost")}${btn("Alterar senha", "new-password", "ghost")}${btn("Sair da conta", "sign-out", "ghost")}</div><p class="form-help spaced">Ao sair, os dados desta conta deixam de aparecer. O modo local é separado. A senha é gerenciada pelo Supabase; ela não entra no backup.</p>${info.conflict ? `<div class="note spaced"><h3>Alterações em dois aparelhos</h3><p class="form-help spaced">Escolha qual versão manter. Antes de usar a nuvem, você poderá salvar um backup da versão deste aparelho.</p><div class="row wrap spaced">${btn("Manter versão deste aparelho", "cloud-keep-local", "primary")}${btn("Usar versão da nuvem", "cloud-use-remote", "ghost")}</div></div>` : ""}</section>`;
+  return `${header("Entrar ou criar conta", "Seus treinos, cardápios e presenças em outros aparelhos.")}<div class="grid cols"><form class="card" data-form="sign-in"><h2>Entrar</h2><div class="stack spaced">${input("E-mail", "email", "", "email", 'required autocomplete="username" maxlength="254"')}${input("Senha", "password", "", "password", 'required autocomplete="current-password"')}<div class="inline-error" role="alert"></div><button class="primary" type="submit">Entrar</button>${btn("Esqueci minha senha", "forgot-password", "ghost")}</div></form><form class="card" data-form="sign-up"><h2>Criar conta</h2><div class="stack spaced">${input("Nome", "name", "", "text", 'required maxlength="100" autocomplete="name"')}${input("E-mail", "email", "", "email", 'required autocomplete="email" maxlength="254"')}${input("Senha (mínimo de 8 caracteres)", "password", "", "password", 'required minlength="8" autocomplete="new-password"')}${input("Repita a senha", "confirmPassword", "", "password", 'required minlength="8" autocomplete="new-password"')}<p class="form-help">Seu e-mail é enviado ao Supabase para autenticação. Os registros que você fizer conectado serão armazenados na sua conta. Dados do modo local não são importados automaticamente.</p><div class="inline-error" role="alert"></div><button class="primary" type="submit">Criar conta</button></div></form></div>`;
+}
 function render() {
+  if (!state) {
+    $("#app").innerHTML =
+      '<main class="account-shell"><h1>MiBody</h1><p>Carregando sua conta…</p></main>';
+    return;
+  }
+  if (!accountAccess) {
+    document.body.classList.remove("light");
+    $("#app").innerHTML =
+      `<main class="account-shell"><div class="brand"><img src="${iconURL}" alt=""><span>MiBody</span></div>${accountView()}<div class="spaced">${btn("Usar modo local deste aparelho", "go-local", "ghost")}</div></main>`;
+    return;
+  }
   document.body.classList.toggle("light", state.profile.theme === "light");
   const nav = [
     ["home", "Hoje"],
@@ -200,7 +328,7 @@ function render() {
     ["user", "Perfil"],
   ];
   $("#app").innerHTML =
-    `<div class="shell"><aside class="sidebar"><div><div class="brand"><img src="${iconURL}" alt=""><span>Mi<span>Body</span></span></div><p class="tagline">SEU RITMO. SUA EVOLUÇÃO.</p></div><nav aria-label="Navegação principal">${nav.map(([id, name]) => btn(`${icon(id)}<span>${name}</span>`, "nav", page === id ? "active" : "", `data-page="${id}" ${page === id ? 'aria-current="page"' : ""}`)).join("")}</nav><div class="sidebar-foot"><div class="avatar">${esc((state.profile.name || "M").slice(0, 1).toUpperCase())}</div><div><h3 style="font-size:12px">${esc(state.profile.name || "Seu espaço pessoal")}</h3><small>Um dia de cada vez.</small></div></div></aside><main class="main"><div class="topbar"><span class="eyebrow">SEU ESPAÇO DE CUIDADO</span><div class="brand mobile-brand"><img src="${iconURL}" alt=""><span>Mi<span>Body</span></span></div><div class="row"><span class="status"><i class="dot"></i><span id="online-status">${navigator.onLine ? "Salvo neste dispositivo" : "Modo offline"}</span></span><input class="date-input" id="date" aria-label="Data dos registros" type="date" value="${selectedDate}">${btn(icon("sun", 18), "theme", "icon", 'aria-label="Alternar tema"')}</div></div>${{ home: homeView, workout: workoutView, food: foodView, chart: evolutionView, user: profileView }[page]()}<p class="info-line">${icon("shield", 14)} Seus dados ficam neste dispositivo. Faça backups regularmente.</p></main></div>`;
+    `<div class="shell"><aside class="sidebar"><div><div class="brand"><img src="${iconURL}" alt=""><span>Mi<span>Body</span></span></div><p class="tagline">SEU RITMO. SUA EVOLUÇÃO.</p></div><nav aria-label="Navegação principal">${nav.map(([id, name]) => btn(`${icon(id)}<span>${name}</span>`, "nav", page === id ? "active" : "", `data-page="${id}" ${page === id ? 'aria-current="page"' : ""}`)).join("")}</nav><div class="sidebar-foot"><div class="avatar">${esc((state.profile.name || "M").slice(0, 1).toUpperCase())}</div><div><h3 style="font-size:12px">${esc(state.profile.name || "Seu espaço pessoal")}</h3><small>Um dia de cada vez.</small></div></div></aside><main class="main"><div class="topbar"><span class="eyebrow">SEU ESPAÇO DE CUIDADO</span><div class="brand mobile-brand"><img src="${iconURL}" alt=""><span>Mi<span>Body</span></span></div><div class="row"><span class="status"><i class="dot"></i><span id="online-status">${esc(cloudInfo().user ? cloudInfo().status : navigator.onLine ? "Salvo neste dispositivo" : "Modo offline")}</span></span><input class="date-input" id="date" aria-label="Data dos registros" type="date" value="${selectedDate}">${btn(icon("user", 18), "go-account", "icon", 'aria-label="Conta e sincronização"')}${btn(icon("sun", 18), "theme", "icon", 'aria-label="Alternar tema"')}</div></div><div id="cloud-banner">${cloudBanner()}</div>${{ home: homeView, workout: workoutView, food: foodView, chart: evolutionView, user: profileView, account: accountView }[page]()}<p class="info-line">${icon("shield", 14)} ${cloudInfo().user ? "Conta conectada. Dados também são salvos neste aparelho; acompanhe a sincronização em Conta." : "Modo local neste aparelho. Entre na conta para sincronizar."}</p></main></div>`;
   tick();
 }
 
@@ -215,7 +343,7 @@ function homeView() {
   );
   const complete = state.sessions.filter((s) => s.date === selectedDate);
   const p = session ? progress(session) : null;
-  return `${header(`${greeting()}${state.profile.name ? ", " + esc(state.profile.name.split(" ")[0]) : ""} <span class="accent">.</span>`, selectedDate === day() ? "Cada escolha conta. Vamos cuidar de você hoje?" : `Seus registros de ${dateLabel(selectedDate)}.`, `<span class="pill">${new Date(selectedDate + "T12:00:00").toLocaleDateString("pt-BR", { weekday: "long" })}</span>`)}<div class="grid stats"><div class="card"><div class="stat-icon">${icon("flame")}</div><div class="eyebrow">Calorias consumidas</div><div class="metric">${fmt(t.kcal)} <span>kcal</span></div><small>${esc(goalText(t.kcal, state.profile.kcal, "kcal"))}</small></div><div class="card"><div class="stat-icon">${icon("workout")}</div><div class="eyebrow">Treinos no mês</div><div class="metric">${state.sessions.filter((s) => s.date.startsWith(selectedDate.slice(0, 7))).length} <span>sessões</span></div><small>Seu movimento, registrado.</small></div><div class="card"><div class="stat-icon">${icon("water")}</div><div class="eyebrow">Água hoje</div><div class="metric">${fmt(w / 1000, 2)} <span>litros</span></div><small>${state.profile.water ? `Meta de ${fmt(state.profile.water / 1000, 2)} L` : "Defina sua meta no perfil"}</small></div></div><div class="grid cols"><div class="stack"><section class="card hero"><div class="row between"><span class="eyebrow">${icon("workout", 16)} SEU PRÓXIMO PASSO</span><span class="badge">${session ? "EM ANDAMENTO" : "TREINO DO DIA"}</span></div>${session ? `<h2>${esc(session.name)}</h2><p class="muted">${p.done} de ${p.all} séries concluídas</p>${bar(p.done, p.all)}${btn("Continuar treino " + icon("arrow", 17), "continue", "primary")}` : scheduled.length ? `<h2>${esc(scheduled[0].name)}</h2><p class="muted">${scheduled[0].exercises.length} exercícios · Planejado para ${days[new Date(selectedDate + "T12:00:00").getDay()]}</p>${btn("Iniciar treino " + icon("arrow", 17), "start", "primary", `data-id="${scheduled[0].id}"`)}` : `<h2>Seu próximo treino<br>começa aqui.</h2><p class="muted">${state.templates.some((t) => !t.archived) ? "Escolha uma ficha e faça o dia acontecer." : "Monte sua primeira ficha no seu ritmo."}</p>${btn((state.templates.some((t) => !t.archived) ? "Escolher treino" : "Criar meu treino") + " " + icon("arrow", 17), state.templates.some((t) => !t.archived) ? "go-workouts" : "new-template", "primary")}`}</section><div><div class="section-label"><h2>Registro rápido</h2><small>Pequenos passos, todos os dias</small></div><div class="quick">${btn(icon("food") + "Alimento", "add-entry")}${btn(icon("water") + "Água", "add-water")}${btn(icon("weight") + "Peso e medidas", "add-body")}</div></div><section class="card"><div class="card-head"><h2>Seu movimento</h2><small>${dateLabel(selectedDate)}</small></div>${complete.length ? complete.map((s) => `<div class="list-item row between"><div class="row"><div class="workout-num">${icon("check")}</div><div><h3>${esc(s.name)}</h3><small>${fmt(volume(s))} kg de volume · ${time(elapsed(s))}</small></div></div>${btn(icon("arrow", 17), "session-detail", "icon", `data-id="${s.id}" aria-label="Detalhes de ${esc(s.name)}"`)}</div>`).join("") : empty("Espaço para a sua próxima conquista", "Os treinos que você concluir aparecem aqui.", "go-workouts", "Explorar minhas fichas", "chart")}</section></div><div class="stack"><section class="card"><div class="card-head"><h2>Nutrição do dia</h2>${btn(icon("plus", 18), "add-entry", "icon", 'aria-label="Adicionar alimento"')}</div><div class="row" style="gap:24px"><div class="ring" style="--angle:${num(state.profile.kcal) ? Math.min(360, (t.kcal / num(state.profile.kcal)) * 360) : 0}deg"><div><strong>${fmt(t.kcal)}</strong><small>kcal</small></div></div><div><small>ENERGIA PARA O SEU DIA</small><h3 style="margin:9px 0">${state.profile.kcal ? `${fmt(state.profile.kcal)} kcal de meta` : "No seu equilíbrio"}</h3><small>${state.entries.some((e) => e.date === selectedDate) ? "Cada refeição faz parte." : "Adicione sua primeira refeição."}</small></div></div><div class="macro-row">${[
+  return `${header(`${greeting()}${state.profile.name ? ", " + esc(state.profile.name.split(" ")[0]) : ""} <span class="accent">.</span>`, selectedDate === day() ? "Cada escolha conta. Vamos cuidar de você hoje?" : `Seus registros de ${dateLabel(selectedDate)}.`, `<span class="pill">${new Date(selectedDate + "T12:00:00").toLocaleDateString("pt-BR", { weekday: "long" })}</span>`)}<div class="grid stats"><div class="card"><div class="stat-icon">${icon("flame")}</div><div class="eyebrow">Calorias consumidas</div><div class="metric">${fmt(t.kcal)} <span>kcal</span></div><small>${esc(goalText(t.kcal, state.profile.kcal, "kcal"))}</small></div><div class="card"><div class="stat-icon">${icon("workout")}</div><div class="eyebrow">Dias na academia no mês</div><div class="metric" id="gym-month-days">${gymDaysInMonth(state, selectedDate)} <span>dias</span></div><small>Uma presença por data.</small></div><div class="card"><div class="stat-icon">${icon("water")}</div><div class="eyebrow">${hydrationLabel()} na data</div><div class="metric">${fmt(w / 1000, 2)} <span>litros</span></div><small>${state.profile.water ? `Meta de ${fmt(state.profile.water / 1000, 2)} L` : "Defina sua meta no perfil"}</small></div></div>${attendanceCard()}<div class="grid cols spaced"><div class="stack"><section class="card hero"><div class="row between"><span class="eyebrow">${icon("workout", 16)} SEU PRÓXIMO PASSO</span><span class="badge">${session ? "EM ANDAMENTO" : "TREINO DO DIA"}</span></div>${session ? `<h2>${esc(session.name)}</h2><p class="muted">${p.done} de ${p.all} séries concluídas</p>${bar(p.done, p.all)}${btn("Continuar treino " + icon("arrow", 17), "continue", "primary")}` : scheduled.length ? `<h2>${esc(scheduled[0].name)}</h2><p class="muted">${scheduled[0].exercises.length} exercícios · Planejado para ${days[new Date(selectedDate + "T12:00:00").getDay()]}</p>${btn("Iniciar treino " + icon("arrow", 17), "start", "primary", `data-id="${scheduled[0].id}"`)}` : `<h2>Seu próximo treino<br>começa aqui.</h2><p class="muted">${state.templates.some((t) => !t.archived) ? "Escolha uma ficha e faça o dia acontecer." : "Monte sua primeira ficha no seu ritmo."}</p>${btn((state.templates.some((t) => !t.archived) ? "Escolher treino" : "Criar meu treino") + " " + icon("arrow", 17), state.templates.some((t) => !t.archived) ? "go-workouts" : "new-template", "primary")}`}</section><div><div class="section-label"><h2>Registro rápido</h2><small>Pequenos passos, todos os dias</small></div><div class="quick">${btn(icon("food") + "Alimento", "add-entry")}${btn(icon("water") + "Água", "add-water")}${btn(icon("weight") + "Peso e medidas", "add-body")}</div></div><section class="card"><div class="card-head"><h2>Seu movimento</h2><small>${dateLabel(selectedDate)}</small></div>${complete.length ? complete.map((s) => `<div class="list-item row between"><div class="row"><div class="workout-num">${icon("check")}</div><div><h3>${esc(s.name)}</h3><small>${fmt(volume(s))} kg de volume · ${time(elapsed(s))}</small></div></div>${btn(icon("arrow", 17), "session-detail", "icon", `data-id="${s.id}" aria-label="Detalhes de ${esc(s.name)}"`)}</div>`).join("") : empty("Espaço para a sua próxima conquista", "Os treinos que você concluir aparecem aqui.", "go-workouts", "Explorar minhas fichas", "chart")}</section></div><div class="stack"><section class="card"><div class="card-head"><h2>Nutrição do dia</h2>${btn(icon("plus", 18), "add-entry", "icon", 'aria-label="Adicionar alimento"')}</div><div class="row" style="gap:24px"><div class="ring" style="--angle:${num(state.profile.kcal) ? Math.min(360, (t.kcal / num(state.profile.kcal)) * 360) : 0}deg"><div><strong>${fmt(t.kcal)}</strong><small>kcal</small></div></div><div><small>ENERGIA PARA O SEU DIA</small><h3 style="margin:9px 0">${state.profile.kcal ? `${fmt(state.profile.kcal)} kcal de meta` : "No seu equilíbrio"}</h3><small>${state.entries.some((e) => e.date === selectedDate) ? "Cada refeição faz parte." : "Adicione sua primeira refeição."}</small></div></div><div class="macro-row">${[
     ["protein", "Proteínas"],
     ["carbs", "Carboidratos"],
     ["fat", "Gorduras"],
@@ -226,7 +354,7 @@ function homeView() {
     )
     .join(
       "",
-    )}</div></section><section class="card"><div class="card-head"><h2>Uma pausa para hidratar</h2>${icon("water", 20)}</div><div class="metric">${fmt(w / 1000, 2)} <span>/ ${state.profile.water ? fmt(state.profile.water / 1000, 2) + " L" : "meta não definida"}</span></div><div class="water-drops">${Array.from({ length: 8 }, (_, i) => `<span class="${state.profile.water ? ((w / num(state.profile.water)) * 8 > i ? "" : "dim") : i < Math.floor(w / 250) ? "" : "dim"}">${icon("water", 23)}</span>`).join("")}</div><div class="row between"><small>${esc(goalText(w, state.profile.water, "ml"))}</small>${btn("+ " + fmt(state.profile.waterQuick || 250) + " ml", "quick-water", "mini")}</div></section><div class="note">${icon("shield", 16)} <strong>Seu espaço, seus dados.</strong><br>Sem conta e sem sincronização entre aparelhos. Você tem o controle dos seus registros.</div></div></div>`;
+    )}</div></section><section class="card"><div class="card-head"><h2>Uma pausa para hidratar</h2>${icon("water", 20)}</div><div class="metric">${fmt(w / 1000, 2)} <span>/ ${state.profile.water ? fmt(state.profile.water / 1000, 2) + " L" : "meta não definida"}</span></div><div class="water-drops">${Array.from({ length: 8 }, (_, i) => `<span class="${state.profile.water ? ((w / num(state.profile.water)) * 8 > i ? "" : "dim") : i < Math.floor(w / 250) ? "" : "dim"}">${icon("water", 23)}</span>`).join("")}</div><div class="row between"><small>${esc(goalText(w, state.profile.water, "ml"))}</small>${btn("+ " + fmt(state.profile.waterQuick || 250) + " ml", "quick-water", "mini")}</div></section><div class="note">${icon("shield", 16)} <strong>Seu espaço, seus dados.</strong><br>Entre na sua conta para separar e sincronizar seus registros. O modo local continua disponível. Você tem o controle dos seus registros.</div></div></div>`;
 }
 
 function workoutView() {
@@ -393,13 +521,13 @@ function calendar() {
       return btn(
         String(i + 1),
         "calendar-date",
-        `${state.sessions.some((s) => s.date === d) ? "trained" : ""} ${d === selectedDate ? "chosen" : ""}`,
-        `data-date="${d}" aria-label="${d}${state.sessions.some((s) => s.date === d) ? ", com treino" : ""}"`,
+        `${gymDates(state).includes(d) ? "trained" : ""} ${d === selectedDate ? "chosen" : ""}`,
+        `data-date="${d}" aria-label="${d}${gymDates(state).includes(d) ? ", com treino" : ""}"`,
       );
     },
   ).join(
     "",
-  )}</div><small>Dias destacados têm sessões concluídas.</small></div>`;
+  )}</div><small>Dias destacados têm treino concluído ou presença manual.</small></div>`;
 }
 function historyView() {
   const weekStart = new Date(selectedDate + "T12:00:00");
@@ -414,7 +542,7 @@ function historyView() {
     )
     .slice()
     .sort((a, b) => b.date.localeCompare(a.date) || b.startedAt - a.startedAt);
-  return `<div class="grid cols"><div class="stack">${calendar()}<div class="card"><h2>Frequência</h2><div class="row spaced" style="gap:40px"><div><div class="metric">${state.sessions.filter((s) => s.date >= day(weekStart) && s.date < day(weekEnd)).length}</div><small>sessões na semana selecionada</small></div><div><div class="metric">${state.sessions.filter((s) => s.date.startsWith(selectedDate.slice(0, 7))).length}</div><small>sessões no mês selecionado</small></div></div></div></div><div class="card"><div class="card-head"><h2>Sessões do mês</h2><span class="pill">${sessions.length} sessões</span></div>${select("Filtrar por ficha", "history-filter", [["", "Todas as fichas"], ...Array.from(new Map([...state.templates, ...state.sessions.map((s) => ({ id: s.templateId, name: s.name }))].map((t) => [t.id, t.name]))).map(([id, n]) => [id, n])], historyFilter)}${sessions.length ? sessions.map((s) => `<div class="list-item row between spaced"><div><small>${dateLabel(s.date)}</small><h3>${esc(s.name)}</h3><p>${time(elapsed(s))} · ${progress(s).done} séries · ${fmt(volume(s))} kg</p></div>${btn(icon("arrow", 16), "session-detail", "icon", `data-id="${s.id}" aria-label="Ver sessão ${esc(s.name)}"`)}</div>`).join("") : empty("Nenhuma sessão neste mês", "Finalize um treino para ver seus registros aqui.", "go-workouts", "Ver fichas", "calendar")}</div></div>`;
+  return `${attendanceCard()}<div class="grid cols spaced"><div class="stack">${calendar()}<div class="card"><h2>Frequência</h2><div class="row spaced" style="gap:40px"><div><div class="metric">${gymDates(state).filter((d) => d >= day(weekStart) && d < day(weekEnd)).length}</div><small>dias na semana selecionada</small></div><div><div class="metric">${gymDaysInMonth(state, selectedDate)}</div><small>dias na academia no mês</small></div></div></div></div><div class="card"><div class="card-head"><h2>Sessões do mês</h2><span class="pill">${sessions.length} sessões</span></div>${select("Filtrar por ficha", "history-filter", [["", "Todas as fichas"], ...Array.from(new Map([...state.templates, ...state.sessions.map((s) => ({ id: s.templateId, name: s.name }))].map((t) => [t.id, t.name]))).map(([id, n]) => [id, n])], historyFilter)}${sessions.length ? sessions.map((s) => `<div class="list-item row between spaced"><div><small>${dateLabel(s.date)}</small><h3>${esc(s.name)}</h3><p>${time(elapsed(s))} · ${progress(s).done} séries · ${fmt(volume(s))} kg</p></div>${btn(icon("arrow", 16), "session-detail", "icon", `data-id="${s.id}" aria-label="Ver sessão ${esc(s.name)}"`)}</div>`).join("") : empty("Nenhuma sessão neste mês", "Finalize um treino para ver seus registros aqui.", "go-workouts", "Ver fichas", "calendar")}</div></div>`;
 }
 function sessionDetail(id) {
   const s = state.sessions.find((x) => x.id === id),
@@ -472,11 +600,16 @@ function currentPlans() {
 function dateNavigation() {
   return `<div class="card menu-date row between wrap spaced"><div><small>CARDÁPIO DA DATA</small><h2>${dateLabel(selectedDate)}</h2></div><div class="row">${btn("← Anterior", "menu-date", "mini", 'data-offset="-1"')}${btn("Próximo →", "menu-date", "mini", 'data-offset="1"')}</div></div>`;
 }
+function pendingMealGuides() {
+  return (state.mealGuides || []).filter(
+    (g) => !currentPlans().some((r) => r.meal === g.meal),
+  );
+}
 function plannedOverview() {
   const rows = currentPlans(),
     t = total(rows),
     custom = planForDate(state, selectedDate);
-  return `${dateNavigation()}<section class="card plan-intro"><div><span class="badge">VARIE DURANTE A SEMANA</span><h2>Escolha o que comer em cada dia</h2><p class="form-help">Vitaminas para café e lanche; arroz, feijão, frango, ovos e macarrão para as refeições principais.</p></div>${btn("Explorar opções", "menu-options", "primary")}</section><div class="row wrap spaced">${btn("Plano desta data", "plan-scope", planScope === "day" ? "selected" : "mini", 'data-scope="day"')}${btn("Plano padrão", "plan-scope", planScope === "default" ? "selected" : "mini", 'data-scope="default"')}${planScope === "day" ? btn("Copiar cardápio para outra data", "copy-plan-day", "mini") : ""}${custom && planScope === "day" ? btn("Voltar ao padrão nesta data", "reset-plan-day", "mini") : ""}</div><p class="form-help spaced">${planScope === "default" ? "Editando o plano padrão usado nos dias sem cardápio próprio. Cardápios já personalizados são preservados." : custom ? `Cardápio próprio de ${dateLabel(selectedDate)}. Alterações aqui valem somente para esta data.` : `Esta data usa o plano padrão. Você pode editá-lo ou ${btn("Personalizar somente esta data", "customize-plan-day", "mini")}.`}</p><div class="note spaced">Planejar não registra consumo. Use “Registrar consumo” somente quando comer. As opções têm totais diferentes; confira as porções e suas metas.</div>${rows.length ? `<section class="card spaced"><small>TOTAL PLANEJADO · ESTIMATIVAS</small><div class="metric">${fmt(t.kcal)} <span>kcal</span></div><p class="form-help">Proteínas: ${fmt(t.protein, 1)} g · Carboidratos: ${fmt(t.carbs, 1)} g · Gorduras: ${fmt(t.fat, 1)} g</p></section>` : ""}<div class="row wrap spaced">${btn("Ver exemplo econômico", "budget-preview", "ghost")}</div>`;
+  return `${dateNavigation()}<section class="card plan-intro"><div><span class="badge">VARIE DURANTE A SEMANA</span><h2>Escolha o que comer em cada dia</h2><p class="form-help">Vitaminas para café e lanche; arroz, feijão, frango, ovos e macarrão para as refeições principais.</p></div>${btn("Explorar opções", "menu-options", "primary")}</section><div class="row wrap spaced">${btn("Plano desta data", "plan-scope", planScope === "day" ? "selected" : "mini", 'data-scope="day"')}${btn("Plano padrão", "plan-scope", planScope === "default" ? "selected" : "mini", 'data-scope="default"')}${planScope === "day" ? btn("Copiar cardápio para outra data", "copy-plan-day", "mini") : ""}${custom && planScope === "day" ? btn("Voltar ao padrão nesta data", "reset-plan-day", "mini") : ""}</div><p class="form-help spaced">${planScope === "default" ? "Editando o plano padrão usado nos dias sem cardápio próprio. Cardápios já personalizados são preservados." : custom ? `Cardápio próprio de ${dateLabel(selectedDate)}. Alterações aqui valem somente para esta data.` : `Esta data usa o plano padrão. Você pode editá-lo ou ${btn("Personalizar somente esta data", "customize-plan-day", "mini")}.`}</p><div class="note spaced">Planejar não registra consumo. Use “Registrar consumo” somente quando comer. As opções têm totais diferentes; confira as porções e suas metas.</div>${rows.length ? `<section class="card spaced"><small>TOTAL PLANEJADO · ESTIMATIVAS${pendingMealGuides().length ? " · PARCIAL" : ""}</small><div class="metric">${fmt(t.kcal)} <span>kcal</span></div><p class="form-help">Proteínas: ${fmt(t.protein, 1)} g · Carboidratos: ${fmt(t.carbs, 1)} g · Gorduras: ${fmt(t.fat, 1)} g</p></section>` : ""}<div class="row wrap spaced">${btn("Ver exemplo econômico", "budget-preview", "ghost")}</div>`;
 }
 function mealOptionsView() {
   const options = MEAL_OPTIONS.filter(
@@ -529,7 +662,7 @@ function mealOptionPreview(id) {
       })
       .join(
         "",
-      )}<p class="form-help spaced">O whey usa 30 g de pó como referência inicial; ajuste para a porção do seu produto. Nenhuma marca é presumida. Nas opções com macarrão, pese a massa seca; a carne moída usa peso cru. Os demais estados estão indicados em cada ingrediente.</p><p class="form-help spaced">Confira ingredientes, rótulos e contato cruzado conforme suas alergias.${state.profile.allergies ? ` Anotações locais: ${esc(state.profile.allergies)}.` : ""}</p>`,
+      )}<p class="form-help spaced">O whey usa 30 g de pó como referência inicial; ajuste para a porção do seu produto. Nenhuma marca é presumida. Nas opções com macarrão, pese a massa seca; a carne moída usa peso cru. Os demais estados estão indicados em cada ingrediente.</p><p class="form-help spaced">Confira ingredientes, rótulos e contato cruzado conforme suas alergias.${state.profile.allergies ? ` Suas anotações: ${esc(state.profile.allergies)}.` : ""}</p>`,
     "choose-meal-option",
     "Usar nesta data",
   );
@@ -586,19 +719,20 @@ function budgetPreview() {
           )}</ol>${missing.length ? select("Adicionar em", "budget-" + m.key, state.meals, state.meals.includes(m.name) ? m.name : state.meals[0]) : ""}</section>`,
     ).join(
       "",
-    )}<div class="note spaced">O óleo listado já representa o total da refeição, inclusive o usado no preparo. Os pesos de arroz, feijão e frango são depois de cozinhar. Porções em unidades são aproximações: os cálculos usam gramas.</div><p class="form-help spaced">Compre frutas e vegetais da época, compare preços locais de ovos, frango e proteína de soja e prepare porções para congelar. As substituições mudam os nutrientes: cadastre os valores do rótulo ao trocar alimentos.</p><p class="form-help spaced">Confira rótulos e contato cruzado para suas alergias. ${state.profile.allergies ? `Suas anotações locais: <strong>${esc(state.profile.allergies)}</strong>.` : ""}</p><p class="form-help spaced">Fonte: <a href="https://github.com/raulfdm/taco-api/tree/main/references" target="_blank" rel="noopener noreferrer">TACO/NEPA–UNICAMP, arquivos de referência e transcrição</a>. Sódio do sal adicionado e de outros temperos não está incluído.</p>${missing.length ? `<label class="check spaced"><input type="checkbox" name="useBudgetGoals">Usar metas de referência: ${fmt(g.kcal)} kcal, P ${g.protein} g, C ${g.carbs} g e G ${g.fat} g.</label><p class="form-help spaced">Marque somente se quiser substituir suas metas atuais por esses valores aproximados. Você pode editá-los depois no Perfil.</p>` : `<footer>${btn("Voltar ao meu plano", "budget-close", "primary")}</footer>`}`,
+    )}<div class="note spaced">O óleo listado já representa o total da refeição, inclusive o usado no preparo. Os pesos de arroz, feijão e frango são depois de cozinhar. Porções em unidades são aproximações: os cálculos usam gramas.</div><p class="form-help spaced">Compre frutas e vegetais da época, compare preços locais de ovos, frango e proteína de soja e prepare porções para congelar. As substituições mudam os nutrientes: cadastre os valores do rótulo ao trocar alimentos.</p><p class="form-help spaced">Confira rótulos e contato cruzado para suas alergias. ${state.profile.allergies ? `Suas anotações: <strong>${esc(state.profile.allergies)}</strong>.` : ""}</p><p class="form-help spaced">Fonte: <a href="https://github.com/raulfdm/taco-api/tree/main/references" target="_blank" rel="noopener noreferrer">TACO/NEPA–UNICAMP, arquivos de referência e transcrição</a>. Sódio do sal adicionado e de outros temperos não está incluído.</p>${missing.length ? `<label class="check spaced"><input type="checkbox" name="useBudgetGoals">Usar metas de referência: ${fmt(g.kcal)} kcal, P ${g.protein} g, C ${g.carbs} g e G ${g.fat} g.</label><p class="form-help spaced">Marque somente se quiser substituir suas metas atuais por esses valores aproximados. Você pode editá-los depois no Perfil.</p>` : `<footer>${btn("Voltar ao meu plano", "budget-close", "primary")}</footer>`}`,
     missing.length ? "budget-plan" : "",
     "Adicionar ao planejamento",
   );
 }
 function mealCard(meal, planned) {
+  const guide = planned && pendingMealGuides().find((g) => g.meal === meal);
   const rows = (
       planned
         ? currentPlans()
         : state.entries.filter((e) => e.date === selectedDate)
     ).filter((e) => e.meal === meal),
     t = total(rows);
-  return `<section class="card"><div class="card-head"><div><h2>${esc(meal)}</h2><small>${fmt(t.kcal)} kcal · P ${fmt(t.protein, 1)} g · C ${fmt(t.carbs, 1)} g · G ${fmt(t.fat, 1)} g</small></div>${btn(icon("plus", 18), planned ? "add-plan" : "add-entry", "icon", `data-meal="${esc(meal)}" aria-label="Adicionar em ${esc(meal)}"`)}</div>${rows.length ? rows.map((e) => `<div class="list-item"><div class="row between"><div><h3>${esc(e.name)}</h3><p>${fmt(e.quantity, 1)} ${esc(e.unit)} · ${fmt(total([e]).kcal)} kcal</p><small>${esc(e.source || "Cadastro manual")}${e.brand ? " · " + esc(e.brand) : ""}</small>${e.portionNote ? `<p class="form-help">${esc(e.portionNote)}</p>` : ""}</div><div class="row">${btn(icon("edit", 16), planned ? "edit-plan" : "edit-entry", "icon", `data-id="${e.id}" aria-label="Editar ${esc(e.name)}"`)}${btn(icon("trash", 16), planned ? "delete-plan" : "delete-entry", "icon danger", `data-id="${e.id}" aria-label="Remover ${esc(e.name)}"`)}</div></div>${planned ? `<div class="spaced">${btn("Registrar consumo", "consume-plan", "mini", `data-id="${e.id}"`)}</div>` : ""}</div>`).join("") : `<p class="form-help">${planned ? "Nada planejado. Adicione alimentos e quantidades." : "Nenhum alimento registrado nesta refeição."}</p>`}${planned ? `<div class="spaced">${btn("Escolher outra opção", "menu-options", "mini", `data-meal="${esc(meal)}"`)}</div>` : ""}${rows.length ? `<div class="row wrap spaced">${!planned ? btn("Copiar para outra data", "copy-meal", "mini", `data-meal="${esc(meal)}"`) : ""}${btn("Salvar como frequente", planned ? "favorite-plan" : "favorite-meal", "mini", `data-meal="${esc(meal)}"`)}</div>` : ""}</section>`;
+  return `<section class="card"><div class="card-head"><div><h2>${esc(meal)}</h2><small>${guide ? "Nutrientes aguardando rótulos" : `${fmt(t.kcal)} kcal · P ${fmt(t.protein, 1)} g · C ${fmt(t.carbs, 1)} g · G ${fmt(t.fat, 1)} g`}</small></div>${btn(icon("plus", 18), planned ? "add-plan" : "add-entry", "icon", `data-meal="${esc(meal)}" aria-label="Adicionar em ${esc(meal)}"`)}</div>${rows.length ? rows.map((e) => `<div class="list-item"><div class="row between"><div><h3>${esc(e.name)}</h3><p>${fmt(e.quantity, 1)} ${esc(e.unit)} · ${fmt(total([e]).kcal)} kcal</p><small>${esc(e.source || "Cadastro manual")}${e.brand ? " · " + esc(e.brand) : ""}</small>${e.portionNote ? `<p class="form-help">${esc(e.portionNote)}</p>` : ""}</div><div class="row">${btn(icon("edit", 16), planned ? "edit-plan" : "edit-entry", "icon", `data-id="${e.id}" aria-label="Editar ${esc(e.name)}"`)}${btn(icon("trash", 16), planned ? "delete-plan" : "delete-entry", "icon danger", `data-id="${e.id}" aria-label="Remover ${esc(e.name)}"`)}</div></div>${planned ? `<div class="spaced">${btn("Registrar consumo", "consume-plan", "mini", `data-id="${e.id}"`)}</div>` : ""}</div>`).join("") : `<p class="form-help">${planned ? "Nada planejado. Adicione alimentos e quantidades." : "Nenhum alimento registrado nesta refeição."}</p>`}${guide ? `<div class="note spaced"><strong>Vitamina do seu plano</strong><p class="form-help spaced">${esc(guide.text)}</p><div class="spaced">${btn("Calcular com meus rótulos", "meal-option", "mini", `data-id="${esc(guide.option)}" data-meal="${esc(meal)}"`)}</div></div>` : ""}${planned ? `<div class="spaced">${btn("Escolher outra opção", "menu-options", "mini", `data-meal="${esc(meal)}"`)}</div>` : ""}${rows.length ? `<div class="row wrap spaced">${!planned ? btn("Copiar para outra data", "copy-meal", "mini", `data-meal="${esc(meal)}"`) : ""}${btn("Salvar como frequente", planned ? "favorite-plan" : "favorite-meal", "mini", `data-meal="${esc(meal)}"`)}</div>` : ""}</section>`;
 }
 function foodLibrary() {
   return `<div class="row wrap spaced" style="margin-bottom:20px">${btn("+ Alimento do rótulo", "new-food", "primary")}${btn("+ Receita", "new-recipe", "ghost")}</div><div class="card">${state.foods.length ? state.foods.map((f) => `<div class="list-item row between"><div><h3>${esc(f.name)}</h3><p>${fmt(f.kcal)} kcal por ${fmt(f.reference, 1)} ${esc(f.unit)}</p><small>${esc(f.source)}${f.brand ? " · " + esc(f.brand) : ""}</small></div><div class="row">${btn(icon("edit", 16), "edit-food", "icon", `data-id="${f.id}" aria-label="Editar alimento"`)}${btn(icon("trash", 16), "delete-food", "icon danger", `data-id="${f.id}" aria-label="Excluir alimento"`)}</div></div>`).join("") : empty("Seu próprio catálogo", "Cadastre alimentos a partir do rótulo. Os valores são informados por você, sem buscas simuladas.", "new-food", "Cadastrar alimento", "food")}</div>`;
@@ -798,17 +932,32 @@ function profileView() {
       ["condicionamento", "Melhorar condicionamento"],
     ],
     p.goal,
-  )}${decimal("Altura (cm, opcional)", "height", p.height)}${decimal("Peso inicial (kg, opcional)", "initialWeight", p.initialWeight)}${weekdays(p.days)}${input("Alergias e restrições (anotação local)", "allergies", p.allergies || "", "text", 'maxlength="2000" placeholder="Informe suas restrições, se houver"')}</div><div class="section-label"><h2>Metas diárias</h2></div><p class="form-help">Informe suas próprias metas. O MiBody não calcula dietas nem prescreve exercícios pelo objetivo.</p><div class="form-grid spaced">${[
+  )}${input("Idade (opcional)", "age", p.age || "", "number", 'min="18" max="120"')}${select(
+    "Sexo informado (opcional)",
+    "sex",
+    [
+      ["", "Não informar"],
+      ["masculino", "Masculino"],
+      ["feminino", "Feminino"],
+    ],
+    p.sex || "",
+  )}${input("Rotina de atividade", "activity", p.activity || "", "text", 'maxlength="3000"')}${decimal("Altura (cm, opcional)", "height", p.height)}${decimal("Peso inicial (kg, opcional)", "initialWeight", p.initialWeight)}${weekdays(p.days)}${input("Alergias e restrições", "allergies", p.allergies || "", "text", 'maxlength="2000" placeholder="Informe suas restrições, se houver"')}${input("Preferências e orçamento", "foodPreferences", p.foodPreferences || "", "text", 'maxlength="3000"')}${input("Seu whey (anotação)", "wheyNote", p.wheyNote || "", "text", 'maxlength="3000"')}</div><div class="section-label"><h2>Metas diárias</h2></div><p class="form-help">Informe suas próprias metas. O MiBody não calcula dietas nem prescreve exercícios pelo objetivo.</p><div class="form-grid spaced">${[
     ["kcal", "Calorias (kcal)"],
     ["protein", "Proteínas (g)"],
     ["carbs", "Carboidratos (g)"],
     ["fat", "Gorduras (g)"],
-    ["water", "Água (ml)"],
+    ["water", "Meta de hidratação (ml)"],
   ]
     .map(([k, l]) => decimal(l, k, p[k]))
-    .join(
-      "",
-    )}</div><div class="section-label"><h2>Do seu jeito</h2></div><div class="form-grid">${select(
+    .join("")}</div><div class="form-grid spaced">${select(
+    "O que entra na meta de hidratação",
+    "hydrationMode",
+    [
+      ["water", "Somente água"],
+      ["liquids", "Água, leite e outros líquidos"],
+    ],
+    p.hydrationMode || "water",
+  )}${decimal("Referência para dia de treino (ml)", "trainingWater", p.trainingWater || "")}</div><p class="form-help spaced">Referências ajustáveis. O leite das vitaminas pode entrar na meta de líquidos; registre o volume uma vez. Consumos alimentares não adicionam hidratação automaticamente. Em uma hora de treino, a necessidade pode aumentar cerca de 400–800 ml conforme suor e calor.</p><div class="section-label"><h2>Do seu jeito</h2></div><div class="form-grid">${select(
     "Tema",
     "theme",
     [
@@ -824,7 +973,7 @@ function profileView() {
       ["any", "Sem preferência"],
     ],
     p.equipmentPreference || "machines",
-  )}${input("Descanso padrão (segundos)", "rest", p.rest, "number", 'required min="0" max="3600"')}${input("Atalho de água (ml)", "waterQuick", p.waterQuick || 250, "number", 'min="1" max="10000" required')}<label class="check"><input type="checkbox" name="autoRest" ${p.autoRest ? "checked" : ""}>Iniciar descanso ao concluir série</label></div><div class="inline-error" role="alert"></div><div class="spaced"><button class="primary" type="submit">Salvar perfil</button></div></form><div class="stack"><section class="card"><div class="card-head"><h2>Seus dados</h2>${icon("shield")}</div><p class="form-help">Armazenados neste navegador usando IndexedDB. Não são sincronizados entre aparelhos e podem ser removidos ao limpar os dados do navegador. Não enviamos dados ou fotos a servidores externos.</p><div class="stack spaced">${btn(icon("download", 17) + " Backup completo (JSON)", "backup", "primary")}${btn("Restaurar backup", "restore", "ghost")}${btn("Exportar registros (CSV)", "csv", "ghost")}${btn("Solicitar armazenamento persistente", "storage", "ghost")}${btn("Excluir todos os dados", "reset", "danger")}</div><input type="file" id="restore-file" accept="application/json,.json" hidden></section><section class="card"><h2>MiBody no seu celular</h2><p class="form-help spaced">${installInstructions()}</p>${installEvent ? `<div class="spaced">${btn("Instalar MiBody", "install", "primary")}</div>` : ""}<p class="form-help spaced">Após o primeiro acesso completo em HTTPS, o aplicativo pode abrir offline. Seus dados são salvos automaticamente. Alertas de descanso funcionam com o app aberto; não há notificações com o app fechado.</p><p id="offline-status" class="form-help spaced"></p></section><section class="note">MiBody 1.0 · Sem rastreadores.<br>Os registros ajudam a acompanhar sua rotina e não substituem orientação profissional.</section></div></div>`;
+  )}${input("Descanso padrão (segundos)", "rest", p.rest, "number", 'required min="0" max="3600"')}${input("Atalho de água (ml)", "waterQuick", p.waterQuick || 250, "number", 'min="1" max="10000" required')}<label class="check"><input type="checkbox" name="autoRest" ${p.autoRest ? "checked" : ""}>Iniciar descanso ao concluir série</label></div><div class="inline-error" role="alert"></div><div class="spaced"><button class="primary" type="submit">Salvar perfil</button></div></form><div class="stack"><section class="card"><h2>Seu plano combinado</h2><p class="form-help spaced">Importe sua configuração privada para preencher o perfil, a referência de hidratação, as fichas com máquinas e o plano com vitaminas, arroz, feijão e frango. As opções de cardápio continuam disponíveis.</p><div class="spaced">${btn("Importar minha configuração", "personal-setup", "primary")}</div></section><section class="card"><div class="card-head"><h2>Seus dados</h2>${icon("shield")}</div><p class="form-help">${cloudInfo().user ? "Seus dados são salvos neste aparelho e sincronizados com a conta conectada no Supabase. Confira o status antes de trocar de aparelho. O backup abaixo contém somente esta conta." : "Seus dados estão somente neste navegador. Entre na conta para sincronizar; transferir os dados locais exige uma ação explícita em Conta."}</p><div class="stack spaced">${btn(icon("download", 17) + " Backup completo (JSON)", "backup", "primary")}${btn("Conta e sincronização", "go-account", "ghost")}${btn("Restaurar backup", "restore", "ghost")}${btn("Exportar registros (CSV)", "csv", "ghost")}${btn("Solicitar armazenamento persistente", "storage", "ghost")}${btn("Excluir todos os dados", "reset", "danger")}</div><input type="file" id="restore-file" accept="application/json,.json" hidden></section><section class="card"><h2>MiBody no seu celular</h2><p class="form-help spaced">${installInstructions()}</p>${installEvent ? `<div class="spaced">${btn("Instalar MiBody", "install", "primary")}</div>` : ""}<p class="form-help spaced">Após o primeiro acesso completo em HTTPS, o aplicativo pode abrir offline. Seus dados são salvos automaticamente. Alertas de descanso funcionam com o app aberto; não há notificações com o app fechado.</p><p id="offline-status" class="form-help spaced"></p></section><section class="note">MiBody 1.0 · Sem rastreadores.<br>Os registros ajudam a acompanhar sua rotina e não substituem orientação profissional.</section></div></div>`;
 }
 function installInstructions() {
   if (portable)
@@ -860,17 +1009,26 @@ function bodyEditor(id) {
 function waterEditor() {
   modal(
     "Sua hidratação",
-    `${decimal("Quantidade (ml)", "ml", state.profile.waterQuick || 250, "required data-positive")}<div class="row wrap spaced">${[150, 250, 500].map((n) => btn(n + " ml", "water-preset", "mini", `data-ml="${n}"`)).join("")}</div><div class="section-label"><h3>Registros de ${dateLabel(selectedDate)}</h3></div>${
+    `${select(
+      "Bebida",
+      "drink",
+      [
+        ["water", "Água"],
+        ["milk", "Leite"],
+        ["other", "Outro líquido"],
+      ],
+      "water",
+    )}${decimal("Quantidade (ml)", "ml", state.profile.waterQuick || 250, "required data-positive")}<p class="form-help spaced">${state.profile.hydrationMode === "liquids" ? "Água e leite contam na sua meta de líquidos." : "Sua meta atual conta somente água; você pode alterá-la no Perfil."} O volume não é adicionado novamente ao registrar o alimento.</p><div class="row wrap spaced">${[150, 250, 500].map((n) => btn(n + " ml", "water-preset", "mini", `data-ml="${n}"`)).join("")}</div><div class="section-label"><h3>Registros de ${dateLabel(selectedDate)}</h3></div>${
       state.water
         .filter((w) => w.date === selectedDate)
         .map(
           (w) =>
-            `<div class="list-item row between"><span>${fmt(w.ml)} ml</span>${btn("Desfazer", "undo-water", "mini danger", `data-id="${w.id}"`)}</div>`,
+            `<div class="list-item row between"><span>${fmt(w.ml)} ml · ${w.drink === "milk" ? "Leite" : w.drink === "other" ? "Outro líquido" : "Água"}</span>${btn("Desfazer", "undo-water", "mini danger", `data-id="${w.id}"`)}</div>`,
         )
         .join("") || '<p class="form-help">Nenhum registro nesta data.</p>'
     }`,
     "water",
-    "Adicionar água",
+    "Adicionar bebida",
   );
 }
 
@@ -978,6 +1136,112 @@ function exportCSV() {
 }
 
 const actions = {
+  "go-local": async () => {
+    if (cloudInfo().user) throw Error("Saia da conta para abrir o modo local.");
+    await writing;
+    setStorageAccount(null);
+    state = await loadGuestState();
+    localStorage.setItem("mibody-local-mode", "true");
+    accountAccess = true;
+    page = "home";
+    close();
+    render();
+  },
+  "go-account": () => {
+    close();
+    page = "account";
+    render();
+  },
+  "go-home": () => {
+    close();
+    page = "home";
+    render();
+  },
+  "cloud-config": () =>
+    modal(
+      "Conectar Supabase",
+      `${input("URL do projeto", "url", cloudConfig()?.url || "", "url", 'required placeholder="https://seu-projeto.supabase.co"')}${input("Chave pública publishable/anon", "key", "", "text", 'required autocomplete="off" spellcheck="false"')}<p class="form-help spaced">Use apenas a chave pública. Nunca cole service_role ou uma chave secret. Execute antes o arquivo supabase/schema.sql no SQL Editor do projeto e configure as URLs de retorno do site. Esta conexão fica neste navegador; a configuração do site hospedado pode ser definida pelo responsável.</p>`,
+      "cloud-config",
+      "Conectar",
+    ),
+  "cloud-sync": async () => {
+    await writing;
+    await synchronize();
+    render();
+  },
+  "sign-out": async () => {
+    await writing;
+    await synchronize();
+    if (await accountPending())
+      return confirmAction(
+        "Sair com sincronização pendente?",
+        "Os registros continuam salvos neste aparelho para esta conta. Entre novamente aqui para sincronizar. Faça um backup antes de sair se precisar levá-los agora para outro aparelho.",
+        async () => {
+          await signOut();
+          close();
+        },
+      );
+    await signOut();
+  },
+  "forgot-password": () =>
+    modal(
+      "Recuperar senha",
+      `${input("E-mail da sua conta", "email", "", "email", 'required autocomplete="email"')}<p class="form-help spaced">Você receberá um link se o e-mail estiver cadastrado. Abra o link no site do MiBody para definir a nova senha.</p>`,
+      "forgot-password",
+      "Enviar link",
+    ),
+  "new-password": () =>
+    modal(
+      "Nova senha",
+      `${input("Nova senha", "password", "", "password", 'required minlength="8" autocomplete="new-password"')}${input("Repita a senha", "confirmPassword", "", "password", 'required minlength="8" autocomplete="new-password"')}`,
+      "new-password",
+      "Salvar senha",
+    ),
+  "import-local-account": () =>
+    confirmAction(
+      "Trazer dados locais para esta conta?",
+      "Substitui os registros da conta conectada por uma cópia dos dados do modo local deste aparelho. Confira se esses dados são seus. Outras contas e a cópia local são preservadas. Exporte um backup antes de continuar.",
+      async () => {
+        state = validateBackup(await loadGuestState());
+        await persist();
+        close();
+        render();
+      },
+    ),
+  "cloud-keep-local": async () => {
+    await writing;
+    await resolveConflict(true);
+    render();
+  },
+  "cloud-use-remote": () =>
+    confirmAction(
+      "Usar versão da nuvem?",
+      "A versão deste aparelho será exportada como backup antes de carregar os registros da nuvem. Alterações locais não sincronizadas deixam de ser a versão ativa.",
+      async () => {
+        backup();
+        await writing;
+        await resolveConflict(false);
+        close();
+        render();
+      },
+    ),
+  "gym-checkin": async () => {
+    if (selectedDate > day())
+      throw Error("Registre presença somente em uma data de hoje ou anterior.");
+    const exists = (state.checkins || []).find((c) => c.date === selectedDate);
+    if (exists)
+      state.checkins = state.checkins.filter((c) => c.id !== exists.id);
+    else (state.checkins ??= []).push({ id: uid(), date: selectedDate });
+    await persist();
+    render();
+  },
+  "personal-setup": () =>
+    modal(
+      "Importar minha configuração",
+      '<label>Cole sua configuração privada<textarea name="setup" rows="9" required maxlength="12000" spellcheck="false"></textarea></label><p class="form-help spaced">Aplica os dados informados ao perfil atual e substitui o plano padrão pelo cardápio combinado. Consumos, medidas, presenças, cardápios de datas e histórico de treino são preservados. Adiciona fichas PPL + Upper + Lower sem duplicar as já importadas. A referência de energia não é uma avaliação nutricional.</p>',
+      "personal-setup",
+      "Aplicar ao meu perfil",
+    ),
   "menu-date": (b) => {
     const date = new Date(selectedDate + "T12:00:00");
     date.setDate(date.getDate() + num(b.dataset.offset));
@@ -1007,6 +1271,7 @@ const actions = {
   "meal-option": (b) => {
     optionReturn = null;
     optionDraft = null;
+    if (b.dataset.meal) optionMeal = b.dataset.meal;
     mealOptionPreview(b.dataset.id);
   },
   "option-label": (b) => {
@@ -1553,7 +1818,7 @@ const actions = {
   reset: () =>
     modal(
       "Excluir todos os dados",
-      `${input("Digite EXCLUIR para confirmar", "confirmation", "", "text", 'required pattern="EXCLUIR" autocomplete="off"')}<p class="form-help spaced">Esta ação remove todos os dados do MiBody neste dispositivo. Exporte um backup antes.</p>`,
+      `${input("Digite EXCLUIR para confirmar", "confirmation", "", "text", 'required pattern="EXCLUIR" autocomplete="off"')}<p class="form-help spaced">Esta ação remove os registros do perfil aberto e, se conectado, sincroniza essa remoção na sua conta. Não remove outras contas. Exporte um backup antes.</p>`,
       "reset",
       "Excluir permanentemente",
     ),
@@ -1643,6 +1908,58 @@ function getExercise(d) {
   };
 }
 const forms = {
+  "cloud-config": async (d) => {
+    saveCloudConfig(d.url.trim(), d.key.trim());
+    close();
+    await startCloud();
+    page = "account";
+    render();
+  },
+  "sign-in": async (d) => {
+    await writing;
+    await signIn(d.email.trim(), d.password);
+  },
+  "sign-up": async (d) => {
+    if (d.password !== d.confirmPassword)
+      throw Error("As senhas precisam ser iguais.");
+    const signedIn = await signUp(d.email.trim(), d.password, d.name.trim());
+    if (!signedIn) {
+      modal(
+        "Confira seu e-mail",
+        '<p class="form-help">Se o cadastro foi aceito, você receberá um e-mail de confirmação. Abra o link e depois entre no MiBody. Confira também a pasta de spam.</p><footer>' +
+          btn("Voltar", "close", "primary") +
+          "</footer>",
+      );
+    }
+  },
+  "forgot-password": async (d) => {
+    await resetPassword(d.email.trim());
+    close();
+    toast("Se o e-mail estiver cadastrado, um link será enviado.");
+  },
+  "new-password": async (d) => {
+    if (d.password !== d.confirmPassword)
+      throw Error("As senhas precisam ser iguais.");
+    await changePassword(d.password);
+    close();
+    toast("Senha atualizada.");
+  },
+  "personal-setup": async (d) => {
+    const next = applyPersonalSetup(state, parsePersonalSetup(d.setup));
+    const previous = state;
+    state = next;
+    if (!(await persist())) {
+      state = previous;
+      throw Error(
+        "A configuração não foi gravada. Seus dados anteriores foram preservados.",
+      );
+    }
+    close();
+    render();
+    toast(
+      "Perfil e plano configurados. Cadastre os rótulos para calcular as vitaminas.",
+    );
+  },
   "choose-meal-option": async (d) => {
     const labels = Object.fromEntries(
       Object.keys(LABEL_INGREDIENTS).map((k) => [k, d["label-" + k]]),
@@ -1885,6 +2202,7 @@ const forms = {
     const used = [
       ...state.entries,
       ...state.plans,
+      ...(state.mealGuides || []),
       ...(state.planDays || []).flatMap((p) => p.items),
       ...state.favorites.flatMap((f) => f.items),
     ];
@@ -1931,7 +2249,12 @@ const forms = {
   },
   water: async (d) => {
     if (d.ml > 10000) throw Error("Registre até 10.000 ml por vez.");
-    state.water.push({ id: uid(), date: selectedDate, ml: d.ml });
+    state.water.push({
+      id: uid(),
+      date: selectedDate,
+      ml: d.ml,
+      drink: d.drink,
+    });
     await persist();
     close();
     render();
@@ -1979,7 +2302,9 @@ const forms = {
     toast("Registro corporal salvo.");
   },
   profile: async (d, f) => {
+    profileEditing = false;
     state.profile = {
+      ...state.profile,
       ...d,
       days: [...f.querySelectorAll("[name=days]:checked")].map((x) =>
         num(x.value),
@@ -2042,6 +2367,7 @@ document.addEventListener("submit", async (event) => {
 });
 document.addEventListener("input", (event) => {
   const el = event.target;
+  if (el.closest('form[data-form="profile"]')) profileEditing = true;
   if (el.closest('form[data-form="choose-meal-option"]')) updateOptionTotals();
   if (el.dataset.setInput) {
     const s =
@@ -2115,7 +2441,7 @@ document.addEventListener("change", async (event) => {
       const restored = validateBackup(JSON.parse(await file.text()));
       confirmAction(
         "Substituir todos os dados?",
-        `Backup válido: ${restored.sessions.length} sessões, ${restored.entries.length} alimentos registrados e ${restored.body.length} registros corporais. Os dados atuais serão substituídos. Exporte um backup antes de continuar.`,
+        `Backup válido: ${restored.sessions.length} sessões, ${restored.entries.length} alimentos registrados e ${restored.body.length} registros corporais. Os dados do perfil aberto serão substituídos e, se conectado, sincronizados nesta conta. Outras contas não são alteradas. Exporte um backup antes de continuar.`,
         async () => {
           const previous = state;
           state = restored;
@@ -2187,11 +2513,18 @@ function tick() {
 }
 setInterval(tick, 1000);
 document.addEventListener("visibilitychange", () => {
-  if (!document.hidden) tick();
+  if (!document.hidden) {
+    tick();
+    synchronize();
+  }
 });
+setInterval(() => {
+  if (!document.hidden && navigator.onLine) synchronize();
+}, 20000);
 window.addEventListener("online", () => {
   const el = $("#online-status");
   if (el) el.textContent = "Salvo neste dispositivo";
+  synchronize();
 });
 window.addEventListener("offline", () => {
   const el = $("#online-status");
@@ -2206,11 +2539,21 @@ window.addEventListener("beforeinstallprompt", (e) => {
 async function boot() {
   try {
     state = await openDB();
+    await startCloud();
+    if (
+      cloudInfo().configured &&
+      !cloudInfo().user &&
+      localStorage.getItem("mibody-local-mode") !== "true"
+    ) {
+      state = initial();
+      accountAccess = false;
+      page = "account";
+    }
     render();
-    if (!state.onboarded) {
+    if (!state.onboarded && !cloudInfo().user && accountAccess) {
       modal(
         "Bem-vindo ao seu ritmo",
-        `<div class="onboard"><img src="${iconURL}" alt="MiBody"><h2>Um lugar para<br>cuidar de você.</h2><p>Treinos, alimentação e evolução corporal. Tudo no seu dispositivo, sem conta e sem distrações.</p><div class="stack spaced">${btn("Configurar meu perfil", "onboard-profile", "primary")}${btn("Começar sem configurar", "onboard-skip", "ghost")}</div><p style="font-size:12px">Seus dados não sincronizam entre aparelhos. Exporte backups no Perfil.</p></div>`,
+        `<div class="onboard"><img src="${iconURL}" alt="MiBody"><h2>Um lugar para<br>cuidar de você.</h2><p>Treinos, alimentação e evolução corporal. Use neste aparelho ou entre na sua conta para sincronizar entre dispositivos.</p><div class="stack spaced">${btn("Criar conta ou entrar", "go-account", "primary")}${btn("Configurar meu perfil", "onboard-profile", "ghost")}${btn("Começar sem configurar", "onboard-skip", "ghost")}</div><p style="font-size:12px">No modo local, os dados ficam neste aparelho. A sincronização exige uma conta conectada.</p></div>`,
       );
     }
   } catch (e) {

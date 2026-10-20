@@ -35,6 +35,7 @@ p.on("request", (r) => {
 const click = (a) => p.locator(`[data-action="${a}"]`).first().click();
 const fill = (name, value) => p.locator(`[name="${name}"]`).fill(String(value));
 const submit = () => p.locator("dialog button[type=submit]").click();
+await p.addInitScript(() => localStorage.setItem("mibody-local-mode", "true"));
 try {
   await p.goto(process.env.PORTABLE_URL || "http://localhost:4173/MiBody.html");
   await click("onboard-skip");

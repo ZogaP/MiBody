@@ -13,11 +13,18 @@
     "test:portable": "node tests/portable.mjs",
     "test:machines": "node tests/machines.mjs",
     "test:budget": "node tests/budget.mjs",
-    "test:menus": "node tests/menus.mjs"
+    "test:menus": "node tests/menus.mjs",
+    "test:cloud:sql": "node tests/cloud-sql.mjs",
+    "test:cloud": "node tests/cloud.mjs",
+    "test:profile": "node tests/profile.mjs"
   },
   "devDependencies": {
+    "@electric-sql/pglite": "^0.5.10",
     "playwright-core": "1.58.2",
     "prettier": "3.8.1",
     "vite": "7.3.1"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.118.0"
   }
 }
